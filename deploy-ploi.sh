@@ -17,15 +17,15 @@ NC='\033[0m' # No Color
 SERVER_IP="188.68.39.236"
 DOMAIN="your-domain.com"  # Replace with your actual domain
 DB_PASSWORD="your_secure_password"
-SUPABASE_ANON_KEY="your_supabase_anon_key"
-SUPABASE_SERVICE_ROLE_KEY="your_supabase_service_role_key"
+DB_NAME="prolegal_db"
+DB_USER="prolegal_user"
 PLOI_USER="ploi"  # Default Ploi user, change if different
 
 echo -e "${YELLOW}Please update the configuration variables at the top of this script:${NC}"
 echo "- DOMAIN: Your domain name"
 echo "- DB_PASSWORD: Secure password for MySQL"
-echo "- SUPABASE_ANON_KEY: Your Supabase anonymous key"
-echo "- SUPABASE_SERVICE_ROLE_KEY: Your Supabase service role key"
+echo "- DB_NAME: Database name (default: prolegal_db)"
+echo "- DB_USER: Database user (default: prolegal_user)"
 echo "- PLOI_USER: Your Ploi user (default: ploi)"
 echo ""
 
@@ -47,60 +47,77 @@ echo "🔧 Installing Node.js..."
 ssh $PLOI_USER@$SERVER_IP "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -"
 ssh $PLOI_USER@$SERVER_IP "sudo apt-get install -y nodejs"
 
-# Step 3: Install PM2 globally
+# Step 3: Install MySQL
+echo "🗄️ Installing MySQL..."
+ssh $PLOI_USER@$SERVER_IP "sudo apt install mysql-server -y"
+ssh $PLOI_USER@$SERVER_IP "sudo systemctl start mysql"
+ssh $PLOI_USER@$SERVER_IP "sudo systemctl enable mysql"
+
+# Step 4: Install PM2 globally
 echo "⚙️ Installing PM2..."
 ssh $PLOI_USER@$SERVER_IP "sudo npm install -g pm2"
 
-# Step 4: Create application directory
+# Step 5: Create application directory
 echo "📁 Creating application directory..."
 ssh $PLOI_USER@$SERVER_IP "mkdir -p ~/apps/prolegal-nust"
 
-# Step 5: Clone repository
+# Step 6: Clone repository
 echo "📥 Cloning repository..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust && rm -rf * && git clone https://github.com/mortonmab/psmasprolegal.git ."
 
-# Step 6: Setup backend
+# Step 7: Setup backend
 echo "⚙️ Setting up backend..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && npm install"
 
 # Create backend .env file
 cat > backend.env << EOF
 DB_HOST=localhost
-DB_USER=prolegal_user
+DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
-DB_NAME=prolegal_nust
+DB_NAME=$DB_NAME
 DB_PORT=3306
-VITE_SUPABASE_URL=https://hsoromdzwwkzlfesrpqp.supabase.co
-VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
 PORT=3000
 NODE_ENV=production
 EOF
 
 scp backend.env $PLOI_USER@$SERVER_IP:~/apps/prolegal-nust/backend/.env
 
-# Step 7: Setup frontend
+# Step 7.5: Setup MySQL Database
+echo "🗃️ Setting up MySQL database..."
+ssh $PLOI_USER@$SERVER_IP "sudo mysql -e \"CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\""
+ssh $PLOI_USER@$SERVER_IP "sudo mysql -e \"CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';\""
+ssh $PLOI_USER@$SERVER_IP "sudo mysql -e \"GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';\""
+ssh $PLOI_USER@$SERVER_IP "sudo mysql -e \"FLUSH PRIVILEGES;\""
+
+# Step 7.6: Run Database Migrations
+echo "🗃️ Running database migrations..."
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrate-cases-table.sql"
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrate-events-table.sql"
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrate-budget-tables.sql"
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < seed-departments.sql"
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && node seed-contract-types.js"
+ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && node seed-data.js"
+
+# Step 8: Setup frontend
 echo "🎨 Setting up frontend..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust && npm install"
 
 # Create frontend .env file
 cat > frontend.env << EOF
-VITE_SUPABASE_URL=https://hsoromdzwwkzlfesrpqp.supabase.co
-VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
 VITE_API_URL=https://$DOMAIN/api
 EOF
 
 scp frontend.env $PLOI_USER@$SERVER_IP:~/apps/prolegal-nust/.env
 
-# Step 8: Build frontend
+# Step 9: Build frontend
 echo "🔨 Building frontend..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust && npm run build"
 
-# Step 9: Build backend
+# Step 10: Build backend
 echo "🔨 Building backend..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust/backend && npx tsc"
 
-# Step 10: Create PM2 ecosystem file
+# Step 11: Create PM2 ecosystem file
 cat > ecosystem.config.js << EOF
 module.exports = {
   apps: [{
@@ -121,7 +138,7 @@ EOF
 
 scp ecosystem.config.js $PLOI_USER@$SERVER_IP:~/apps/prolegal-nust/
 
-# Step 11: Start application with PM2
+# Step 12: Start application with PM2
 echo "🚀 Starting application with PM2..."
 ssh $PLOI_USER@$SERVER_IP "cd ~/apps/prolegal-nust && pm2 start ecosystem.config.js"
 ssh $PLOI_USER@$SERVER_IP "pm2 save"

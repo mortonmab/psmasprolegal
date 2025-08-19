@@ -28,38 +28,44 @@ echo "🔧 Installing Node.js..."
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Step 3: Install PM2
+# Step 3: Install MySQL
+echo "🗄️ Installing MySQL..."
+sudo apt install mysql-server -y
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# Step 4: Install PM2
 echo "⚙️ Installing PM2..."
 sudo npm install -g pm2
 
-# Step 4: Create application directory
+# Step 5: Create application directory
 echo "📁 Creating application directory..."
 mkdir -p ~/apps/prolegal-nust
 cd ~/apps/prolegal-nust
 
-# Step 5: Clone repository
+# Step 6: Clone repository
 echo "📥 Cloning repository..."
 rm -rf * .git
 git clone https://github.com/mortonmab/psmasprolegal.git .
 
-# Step 6: Setup backend
+# Step 7: Setup backend
 echo "⚙️ Setting up backend..."
 cd backend
 npm install
 
-# Step 7: Setup frontend
+# Step 8: Setup frontend
 echo "🎨 Setting up frontend..."
 cd ..
 npm install
 
-# Step 8: Build applications
+# Step 9: Build applications
 echo "🔨 Building applications..."
 npm run build
 cd backend
 npx tsc
 cd ..
 
-# Step 9: Create PM2 ecosystem file
+# Step 10: Create PM2 ecosystem file
 echo "📝 Creating PM2 configuration..."
 cat > ecosystem.config.js << 'EOF'
 module.exports = {
@@ -82,8 +88,8 @@ EOF
 echo -e "${GREEN}✅ Server setup completed!${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo "1. Create environment files (.env) with your credentials"
-echo "2. Set up database and run migrations"
+echo "1. Create environment files (.env) with your database credentials"
+echo "2. Set up MySQL database and run migrations"
 echo "3. Configure Ploi dashboard site"
 echo "4. Start the application with: pm2 start ecosystem.config.js"
 echo ""

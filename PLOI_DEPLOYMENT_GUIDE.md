@@ -7,7 +7,7 @@ This guide will walk you through deploying your ProLegal NUST application on a P
 - Ploi server with Ubuntu 24.04.1 LTS (✅ You have this)
 - Domain name (optional but recommended)
 - SSH access to your server
-- Your Supabase credentials
+- MySQL database (will be set up on the server)
 
 ## Server Information
 
@@ -24,16 +24,18 @@ Edit the `deploy-ploi.sh` script and update these variables:
 ```bash
 DOMAIN="your-domain.com"  # Replace with your actual domain
 DB_PASSWORD="your_secure_password"
-SUPABASE_ANON_KEY="your_supabase_anon_key"
-SUPABASE_SERVICE_ROLE_KEY="your_supabase_service_role_key"
+DB_NAME="prolegal_db"  # Database name
+DB_USER="prolegal_user"  # Database user
 PLOI_USER="ploi"  # Change if your Ploi user is different
 ```
 
-### 1.2 Get Your Supabase Credentials
+### 1.2 Database Configuration
 
-From your `.env` file, you need:
-- `VITE_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+The application uses MySQL for the database. The deployment script will:
+- Create the MySQL database
+- Set up the database user
+- Configure all necessary tables
+- Seed initial data
 
 ## Step 2: Run the Deployment Script
 
@@ -111,56 +113,47 @@ If you have a domain:
 
 ### 4.1 Create MySQL Database
 
-In Ploi dashboard:
+The deployment script will automatically:
+1. Create the MySQL database (`prolegal_db`)
+2. Create a database user (`prolegal_user`)
+3. Grant necessary privileges
+4. Run all migrations and seed data
+
+If you prefer to do this manually in Ploi dashboard:
 1. Go to "Databases"
 2. Click "Add Database"
-3. Create a database named `prolegal_nust`
+3. Create a database named `prolegal_db`
 4. Create a user with all privileges
 
-### 4.2 Run Database Migrations
+### 4.2 Database Migrations
 
-SSH into your server and run:
-
-```bash
-cd ~/apps/prolegal-nust/backend
-
-# Run migrations
-mysql -u your_db_user -p prolegal_nust < migrate-cases-table.sql
-mysql -u your_db_user -p prolegal_nust < migrate-events-table.sql
-mysql -u your_db_user -p prolegal_nust < migrate-budget-tables.sql
-
-# Seed data
-mysql -u your_db_user -p prolegal_nust < seed-departments.sql
-node seed-contract-types.js
-node seed-data.js
-```
+The deployment script will automatically run:
+- All SQL migration files
+- Seed data scripts
+- Contract type initialization
+- Sample data creation
 
 ## Step 5: Update Environment Variables
 
 ### 5.1 Backend Environment
 
-SSH into your server and update `/home/ploi/apps/prolegal-nust/backend/.env`:
+The deployment script will automatically create the backend `.env` file with:
 
 ```env
 DB_HOST=localhost
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
-DB_NAME=prolegal_nust
+DB_USER=prolegal_user
+DB_PASSWORD=your_secure_password
+DB_NAME=prolegal_db
 DB_PORT=3306
-VITE_SUPABASE_URL=https://hsoromdzwwkzlfesrpqp.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 PORT=3000
 NODE_ENV=production
 ```
 
 ### 5.2 Frontend Environment
 
-Update `/home/ploi/apps/prolegal-nust/.env`:
+The deployment script will automatically create the frontend `.env` file with:
 
 ```env
-VITE_SUPABASE_URL=https://hsoromdzwwkzlfesrpqp.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_API_URL=https://your-domain.com/api
 ```
 
