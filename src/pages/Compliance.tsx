@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { Plus, Calendar, Users, ChevronDown, Clock, ArrowRight, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Calendar, Users, ChevronDown, Clock, ArrowRight, Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { ComplianceRunForm } from '../components/compliance/ComplianceRunForm';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { DepartmentCompliance } from '../components/compliance/DepartmentCompliance';
 import { GeneralCompliance } from '../components/compliance/GeneralCompliance';
+import { departmentService } from '../services/departmentService';
+import { useToast } from '../components/ui/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface Department {
   id: string;
@@ -34,7 +37,7 @@ interface ComplianceQuestion {
 
 interface ComplianceFilters {
   search: string;
-  department: string;
+  department: string | 'all';
   status: string;
 }
 
@@ -43,55 +46,33 @@ export function Compliance() {
   const [activeTab, setActiveTab] = useState('department');
   const [filters, setFilters] = useState<ComplianceFilters>({
     search: '',
-    department: '',
+    department: 'all',
     status: ''
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const tabs = [
-    { id: 'upcoming', name: 'Upcoming Runs' },
-    { id: 'active', name: 'Active Runs' },
-    { id: 'completed', name: 'Completed' },
-  ];
+  useEffect(() => {
+    loadDepartments();
+  }, []);
 
-  // Sample departments - replace with actual data
-  const departments = [
-    { id: '1', name: 'Legal' },
-    { id: '2', name: 'HR' },
-    { id: '3', name: 'Finance' },
-    { id: '4', name: 'IT' },
-  ];
-
-  // Sample data - replace with actual data
-  const sampleRuns: ComplianceRun[] = [
-    {
-      id: '1',
-      title: 'Quarterly Security Assessment',
-      description: 'Security compliance check',
-      frequency: 'quarterly',
-      departments: [departments[0], departments[3]],
-      questions: [],
-      startDate: new Date(),
-      dueDate: new Date(),
-      status: 'active',
-      createdAt: new Date()
-    },
-    // Add more sample items...
-  ];
-
-  const filteredRuns = sampleRuns.filter(run => {
-    const matchesSearch = run.title.toLowerCase().includes(filters.search.toLowerCase());
-    const matchesDepartment = !filters.department || 
-      run.departments.some(dept => dept.id === filters.department);
-    return matchesSearch && matchesDepartment;
-  });
-
-  const totalPages = Math.ceil(filteredRuns.length / itemsPerPage);
-  const paginatedRuns = filteredRuns.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const loadDepartments = async () => {
+    try {
+      setLoading(true);
+      const depts = await departmentService.getAllDepartments();
+      setDepartments(depts);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load departments',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (data: any) => {
     // ... existing submission logic
@@ -115,6 +96,60 @@ export function Compliance() {
         <h1 className="text-2xl font-semibold text-gray-900">Compliance Management</h1>
       </div>
 
+      {/* Search and Filters - Moved to top */}
+      <div className="bg-white shadow rounded-lg p-4">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          {/* Search Bar */}
+          <div className="flex-1 max-w-md">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search compliance runs..."
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {filters.search && (
+                <button
+                  onClick={() => setFilters({ ...filters, search: '' })}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Department Filter */}
+          <div className="flex items-center space-x-2">
+            <Filter className="h-4 w-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Department:</span>
+            <Select value={filters.department} onValueChange={(value) => setFilters({ ...filters, department: value })}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder={loading ? "Loading..." : "All Departments"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(filters.search || filters.department !== 'all') && (
+              <button
+                onClick={() => setFilters({ search: '', department: 'all', status: '' })}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <Tabs defaultValue="department" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="department">Department Compliance</TabsTrigger>
@@ -122,7 +157,10 @@ export function Compliance() {
         </TabsList>
         
         <TabsContent value="department" className="mt-6">
-          <DepartmentCompliance />
+          <DepartmentCompliance 
+            searchQuery={filters.search}
+            selectedDepartment={filters.department}
+          />
         </TabsContent>
         
         <TabsContent value="general" className="mt-6">
@@ -130,147 +168,7 @@ export function Compliance() {
         </TabsContent>
       </Tabs>
 
-      {/* Search and Filters */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="Search compliance runs..."
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-          />
-        </div>
-        <div>
-          <select
-            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-            value={filters.department}
-            onChange={(e) => setFilters({ ...filters, department: e.target.value })}
-          >
-            <option value="">All Departments</option>
-            {departments.map((dept) => (
-              <option key={dept.id} value={dept.id}>
-                {dept.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
-      {/* Main content */}
-      <div className="mt-6">
-        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-          <ul className="divide-y divide-gray-200">
-            {paginatedRuns.map((run) => (
-              <li key={run.id}>
-                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0">
-                        <Calendar className="h-6 w-6 text-gray-400" />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-blue-600">{run.title}</p>
-                        <p className="text-sm text-gray-500">
-                          Due {format(run.dueDate, 'MMM dd, yyyy')}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        {run.status}
-                      </span>
-                      <ArrowRight className="ml-4 h-5 w-5 text-gray-400" />
-                    </div>
-                  </div>
-                  <div className="mt-2 sm:flex sm:justify-between">
-                    <div className="sm:flex">
-                      <p className="flex items-center text-sm text-gray-500">
-                        <Users className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
-                        {run.departments.length} Departments
-                      </p>
-                      <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                        <Clock className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
-                        {run.frequency}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-          <div className="flex flex-1 justify-between sm:hidden">
-            <button
-              onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
-              disabled={currentPage === 1}
-              className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
-              disabled={currentPage === totalPages}
-              className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Next
-            </button>
-          </div>
-          <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
-                <span className="font-medium">
-                  {Math.min(currentPage * itemsPerPage, filteredRuns.length)}
-                </span>{' '}
-                of <span className="font-medium">{filteredRuns.length}</span> results
-              </p>
-            </div>
-            <div>
-              <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                <button
-                  onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                >
-                  <span className="sr-only">Previous</span>
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                {/* Page numbers */}
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
-                      currentPage === i + 1
-                        ? 'z-10 bg-blue-600 text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
-                        : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
-                  disabled={currentPage === totalPages}
-                  className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                >
-                  <span className="sr-only">Next</span>
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </nav>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* New Run Modal */}
       {showNewRunModal && (

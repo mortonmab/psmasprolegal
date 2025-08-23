@@ -28,6 +28,7 @@ export function ComplianceRunForm({ departments, onSubmit, onCancel }: Complianc
     frequency: 'once',
     startDate: '',
     dueDate: '',
+    recurringDay: '', // Day of month/week for recurring surveys
     departments: [] as string[],
     questions: [] as Question[]
   });
@@ -172,6 +173,67 @@ export function ComplianceRunForm({ departments, onSubmit, onCancel }: Complianc
             How often should this compliance check be repeated? Choose "Once Off" for one-time surveys.
           </p>
         </div>
+
+        {/* Recurring Day Field - Only show for recurring frequencies */}
+        {formData.frequency !== 'once' && (
+          <div>
+            <label htmlFor="recurringDay" className="block text-sm font-medium text-gray-700 mb-1">
+              {formData.frequency === 'monthly' ? 'Day of Month' : 
+               formData.frequency === 'weekly' ? 'Day of Week' :
+               formData.frequency === 'quarterly' ? 'Day of Quarter' :
+               formData.frequency === 'annually' ? 'Day of Year' : 'Recurring Day'} *
+            </label>
+            <select
+              id="recurringDay"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              value={formData.recurringDay}
+              onChange={(e) => setFormData({ ...formData, recurringDay: e.target.value })}
+              required
+            >
+              <option value="">Select day...</option>
+              {formData.frequency === 'monthly' && (
+                Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day}>{day}</option>
+                ))
+              )}
+              {formData.frequency === 'weekly' && (
+                [
+                  { value: '1', label: 'Monday' },
+                  { value: '2', label: 'Tuesday' },
+                  { value: '3', label: 'Wednesday' },
+                  { value: '4', label: 'Thursday' },
+                  { value: '5', label: 'Friday' },
+                  { value: '6', label: 'Saturday' },
+                  { value: '7', label: 'Sunday' }
+                ].map(day => (
+                  <option key={day.value} value={day.value}>{day.label}</option>
+                ))
+              )}
+              {formData.frequency === 'quarterly' && (
+                Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day}>{day}</option>
+                ))
+              )}
+              {formData.frequency === 'annually' && (
+                Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day}>{day}</option>
+                ))
+              )}
+              {formData.frequency === 'bimonthly' && (
+                Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day}>{day}</option>
+                ))
+              )}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {formData.frequency === 'monthly' ? 'Select which day of each month the survey should run (e.g., 15th of every month)' :
+               formData.frequency === 'weekly' ? 'Select which day of the week the survey should run' :
+               formData.frequency === 'quarterly' ? 'Select which day of each quarter the survey should run' :
+               formData.frequency === 'annually' ? 'Select which day of each year the survey should run' :
+               'Select the recurring day for this survey'}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

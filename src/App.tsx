@@ -28,6 +28,7 @@ import AIAssistant from './pages/AIAssistant';
 import { Compliance } from './pages/Compliance';
 import { ComplianceSurvey } from './pages/ComplianceSurvey';
 import { ComplianceSurveyComplete } from './pages/ComplianceSurveyComplete';
+import { ComplianceConfirmation } from './pages/ComplianceConfirmation';
 import { EmailVerification } from './pages/EmailVerification';
 import { PasswordReset } from './pages/PasswordReset';
 import { ToastProvider } from './components/ui/toast';
@@ -52,6 +53,7 @@ function App() {
             {/* Public routes - accessible without authentication */}
             <Route path="/compliance-survey/:token" element={<ComplianceSurvey />} />
             <Route path="/compliance-survey-complete" element={<ComplianceSurveyComplete />} />
+            <Route path="/compliance-confirm/:token" element={<ComplianceConfirmation />} />
             
             {/* Protected routes - require authentication */}
             {!user ? (

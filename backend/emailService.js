@@ -1,178 +1,71 @@
-import nodemailer from 'nodemailer';
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailService = void 0;
+const nodemailer_1 = __importDefault(require("nodemailer"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const crypto_1 = __importDefault(require("crypto"));
 // Email configuration
 const emailConfig = {
-  host: process.env.SMTP_HOST || 'soxfort.com',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: true, // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER || 'no_reply@soxfort.com',
-    pass: process.env.SMTP_PASS || '@Soxfort2000'
-  }
+    host: process.env.SMTP_HOST || 'soxfort.com',
+    port: parseInt(process.env.SMTP_PORT || '465'),
+    secure: true, // true for 465, false for other ports
+    auth: {
+        user: process.env.SMTP_USER || 'no_reply@soxfort.com',
+        pass: process.env.SMTP_PASS || '@Soxfort2000'
+    }
 };
-
 // JWT secret for verification tokens
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
 // Create transporter
-const transporter = nodemailer.createTransport(emailConfig);
-
-export interface EmailVerificationData {
-  userId: string;
-  email: string;
-  fullName: string;
-}
-
-export interface TaskAssignmentData {
-  taskId: string;
-  taskTitle: string;
-  assignedToEmail: string;
-  assignedToName: string;
-  assignedByName: string;
-  dueDate?: string;
-  priority: string;
-  description?: string;
-}
-
-export interface TaskStatusUpdateData {
-  taskId: string;
-  taskTitle: string;
-  assignedByEmail: string;
-  assignedByName: string;
-  updatedByName: string;
-  newStatus: string;
-  dueDate?: string;
-}
-
-export interface TaskAcceptedData {
-  taskId: string;
-  taskTitle: string;
-  assignedByEmail: string;
-  assignedByName: string;
-  acceptedByName: string;
-  dueDate?: string;
-}
-
-export interface TaskCommentData {
-  taskId: string;
-  taskTitle: string;
-  assignedByEmail: string;
-  assignedByName: string;
-  commentedByName: string;
-  commentId: string;
-}
-
-export interface ContractExpiryData {
-  contractId: string;
-  contractTitle: string;
-  contractNumber: string;
-  endDate: string;
-  daysUntilExpiry: number;
-  departmentName: string;
-  contractType: string;
-  contractValue?: string;
-  currency?: string;
-}
-
-export interface EventInvitationData {
-  eventId: string;
-  eventTitle: string;
-  eventDescription: string;
-  eventType: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  location: string;
-  organizerName: string;
-  organizerEmail: string;
-  attendeeName: string;
-  attendeeEmail: string;
-  role: string;
-}
-
-export interface ComplianceSurveyData {
-  complianceRunId: string;
-  complianceRunTitle: string;
-  complianceRunDescription: string;
-  dueDate: string;
-}
-
-export interface ComplianceReminderData {
-  recipientName: string;
-  recipientEmail: string;
-  complianceName: string;
-  complianceDescription: string;
-  dueDate: string;
-  reminderType: string;
-  frequency: string;
-  confirmationLink: string;
-}
-
-export interface ComplianceSurveyData {
-  recipientName: string;
-  recipientEmail: string;
-  surveyLink: string;
-  departmentName: string;
-  createdByName: string;
-}
-
-export class EmailService {
-  /**
-   * Generate a verification token for email verification
-   */
-  static generateVerificationToken(userId: string, email: string): string {
-    return jwt.sign(
-      { 
-        userId, 
-        email, 
-        type: 'email_verification',
-        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
-      },
-      JWT_SECRET
-    );
-  }
-
-  /**
-   * Generate a password reset token
-   */
-  static generatePasswordResetToken(userId: string, email: string): string {
-    return jwt.sign(
-      { 
-        userId, 
-        email, 
-        type: 'password_reset',
-        exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour
-      },
-      JWT_SECRET
-    );
-  }
-
-  /**
-   * Verify a JWT token
-   */
-  static verifyToken(token: string): any {
-    try {
-      return jwt.verify(token, JWT_SECRET);
-    } catch (error) {
-      throw new Error('Invalid or expired token');
+const transporter = nodemailer_1.default.createTransport(emailConfig);
+class EmailService {
+    /**
+     * Generate a verification token for email verification
+     */
+    static generateVerificationToken(userId, email) {
+        return jsonwebtoken_1.default.sign({
+            userId,
+            email,
+            type: 'email_verification',
+            exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+        }, JWT_SECRET);
     }
-  }
-
-  /**
-   * Send email verification email
-   */
-  static async sendVerificationEmail(data: EmailVerificationData, baseUrl: string): Promise<void> {
-    const token = this.generateVerificationToken(data.userId, data.email);
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}`;
-
-    const mailOptions = {
-      from: `"ProLegal System" <${emailConfig.auth.user}>`,
-      to: data.email,
-      subject: 'Welcome to ProLegal - Verify Your Email',
-      html: `
+    /**
+     * Generate a password reset token
+     */
+    static generatePasswordResetToken(userId, email) {
+        return jsonwebtoken_1.default.sign({
+            userId,
+            email,
+            type: 'password_reset',
+            exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour
+        }, JWT_SECRET);
+    }
+    /**
+     * Verify a JWT token
+     */
+    static verifyToken(token) {
+        try {
+            return jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        }
+        catch (error) {
+            throw new Error('Invalid or expired token');
+        }
+    }
+    /**
+     * Send email verification email
+     */
+    static async sendVerificationEmail(data, baseUrl) {
+        const token = this.generateVerificationToken(data.userId, data.email);
+        const verificationUrl = `${baseUrl}/verify-email?token=${token}`;
+        const mailOptions = {
+            from: `"ProLegal System" <${emailConfig.auth.user}>`,
+            to: data.email,
+            subject: 'Welcome to ProLegal - Verify Your Email',
+            html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background-color: #1f2937; color: white; padding: 20px; text-align: center;">
             <h1 style="margin: 0;">ProLegal</h1>
@@ -217,29 +110,27 @@ export class EmailService {
           </div>
         </div>
       `
-    };
-
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Verification email sent to ${data.email}`);
-    } catch (error) {
-      console.error('❌ Error sending verification email:', error);
-      throw new Error('Failed to send verification email');
+        };
+        try {
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Verification email sent to ${data.email}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending verification email:', error);
+            throw new Error('Failed to send verification email');
+        }
     }
-  }
-
-  /**
-   * Send password reset email
-   */
-  static async sendPasswordResetEmail(data: EmailVerificationData, baseUrl: string): Promise<void> {
-    const token = this.generatePasswordResetToken(data.userId, data.email);
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-    const mailOptions = {
-      from: `"ProLegal System" <${emailConfig.auth.user}>`,
-      to: data.email,
-      subject: 'ProLegal - Password Reset Request',
-      html: `
+    /**
+     * Send password reset email
+     */
+    static async sendPasswordResetEmail(data, baseUrl) {
+        const token = this.generatePasswordResetToken(data.userId, data.email);
+        const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+        const mailOptions = {
+            from: `"ProLegal System" <${emailConfig.auth.user}>`,
+            to: data.email,
+            subject: 'ProLegal - Password Reset Request',
+            html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background-color: #1f2937; color: white; padding: 20px; text-align: center;">
             <h1 style="margin: 0;">ProLegal</h1>
@@ -284,49 +175,45 @@ export class EmailService {
           </div>
         </div>
       `
-    };
-
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Password reset email sent to ${data.email}`);
-    } catch (error) {
-      console.error('❌ Error sending password reset email:', error);
-      throw new Error('Failed to send password reset email');
+        };
+        try {
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Password reset email sent to ${data.email}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending password reset email:', error);
+            throw new Error('Failed to send password reset email');
+        }
     }
-  }
-
-  /**
-   * Hash password using bcrypt-like approach (using crypto)
-   */
-  static hashPassword(password: string): string {
-    // In production, use bcrypt or argon2
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return `${salt}:${hash}`;
-  }
-
-  /**
-   * Verify password
-   */
-  static verifyPassword(password: string, hashedPassword: string): boolean {
-    const [salt, hash] = hashedPassword.split(':');
-    const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return hash === verifyHash;
-  }
-
-  /**
-   * Send task assignment email
-   */
-  static async sendTaskAssignmentEmail(data: TaskAssignmentData): Promise<void> {
-    try {
-      const priorityColor = data.priority === 'high' ? '#dc2626' : data.priority === 'medium' ? '#d97706' : '#059669';
-      const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
-      
-      const mailOptions = {
-        from: `"ProLegal System" <${emailConfig.auth.user}>`,
-        to: data.assignedToEmail,
-        subject: `New Task Assigned: ${data.taskTitle} - ProLegal`,
-        html: `
+    /**
+     * Hash password using bcrypt-like approach (using crypto)
+     */
+    static hashPassword(password) {
+        // In production, use bcrypt or argon2
+        const salt = crypto_1.default.randomBytes(16).toString('hex');
+        const hash = crypto_1.default.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+        return `${salt}:${hash}`;
+    }
+    /**
+     * Verify password
+     */
+    static verifyPassword(password, hashedPassword) {
+        const [salt, hash] = hashedPassword.split(':');
+        const verifyHash = crypto_1.default.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+        return hash === verifyHash;
+    }
+    /**
+     * Send task assignment email
+     */
+    static async sendTaskAssignmentEmail(data) {
+        try {
+            const priorityColor = data.priority === 'high' ? '#dc2626' : data.priority === 'medium' ? '#d97706' : '#059669';
+            const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
+            const mailOptions = {
+                from: `"ProLegal System" <${emailConfig.auth.user}>`,
+                to: data.assignedToEmail,
+                subject: `New Task Assigned: ${data.taskTitle} - ProLegal`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">New Task Assignment</h2>
             <p>Hello ${data.assignedToName},</p>
@@ -361,26 +248,24 @@ export class EmailService {
             <p>Best regards,<br>The ProLegal Team</p>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Task assignment email sent to ${data.assignedToEmail}`);
-    } catch (error) {
-      console.error('❌ Error sending task assignment email:', error);
-      throw new Error('Failed to send task assignment email');
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Task assignment email sent to ${data.assignedToEmail}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending task assignment email:', error);
+            throw new Error('Failed to send task assignment email');
+        }
     }
-  }
-
-  static async sendTaskStatusUpdateEmail(data: TaskStatusUpdateData): Promise<void> {
-    try {
-      const statusColor = data.newStatus === 'completed' ? '#059669' : data.newStatus === 'in_progress' ? '#2563eb' : '#6b7280';
-      const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
-      
-      const mailOptions = {
-        from: `"ProLegal System" <${emailConfig.auth.user}>`,
-        to: data.assignedByEmail,
-        subject: `Task Status Updated: ${data.taskTitle} - ProLegal`,
-        html: `
+    static async sendTaskStatusUpdateEmail(data) {
+        try {
+            const statusColor = data.newStatus === 'completed' ? '#059669' : data.newStatus === 'in_progress' ? '#2563eb' : '#6b7280';
+            const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
+            const mailOptions = {
+                from: `"ProLegal System" <${emailConfig.auth.user}>`,
+                to: data.assignedByEmail,
+                subject: `Task Status Updated: ${data.taskTitle} - ProLegal`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">Task Status Update</h2>
             <p>Hello ${data.assignedByName},</p>
@@ -413,25 +298,23 @@ export class EmailService {
             <p>Best regards,<br>The ProLegal Team</p>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Task status update email sent to ${data.assignedByEmail}`);
-    } catch (error) {
-      console.error('❌ Error sending task status update email:', error);
-      throw new Error('Failed to send task status update email');
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Task status update email sent to ${data.assignedByEmail}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending task status update email:', error);
+            throw new Error('Failed to send task status update email');
+        }
     }
-  }
-
-  static async sendTaskAcceptedEmail(data: TaskAcceptedData): Promise<void> {
-    try {
-      const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
-      
-      const mailOptions = {
-        from: `"ProLegal System" <${emailConfig.auth.user}>`,
-        to: data.assignedByEmail,
-        subject: `Task Accepted: ${data.taskTitle} - ProLegal`,
-        html: `
+    static async sendTaskAcceptedEmail(data) {
+        try {
+            const dueDateText = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No due date set';
+            const mailOptions = {
+                from: `"ProLegal System" <${emailConfig.auth.user}>`,
+                to: data.assignedByEmail,
+                subject: `Task Accepted: ${data.taskTitle} - ProLegal`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #059669;">Task Accepted</h2>
             <p>Hello ${data.assignedByName},</p>
@@ -463,23 +346,22 @@ export class EmailService {
             <p>Best regards,<br>The ProLegal Team</p>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Task accepted email sent to ${data.assignedByEmail}`);
-    } catch (error) {
-      console.error('❌ Error sending task accepted email:', error);
-      throw new Error('Failed to send task accepted email');
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Task accepted email sent to ${data.assignedByEmail}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending task accepted email:', error);
+            throw new Error('Failed to send task accepted email');
+        }
     }
-  }
-
-  static async sendTaskCommentEmail(data: TaskCommentData): Promise<void> {
-    try {
-      const mailOptions = {
-        from: `"ProLegal System" <${emailConfig.auth.user}>`,
-        to: data.assignedByEmail,
-        subject: `New Comment on Task: ${data.taskTitle} - ProLegal`,
-        html: `
+    static async sendTaskCommentEmail(data) {
+        try {
+            const mailOptions = {
+                from: `"ProLegal System" <${emailConfig.auth.user}>`,
+                to: data.assignedByEmail,
+                subject: `New Comment on Task: ${data.taskTitle} - ProLegal`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">New Task Comment</h2>
             <p>Hello ${data.assignedByName},</p>
@@ -506,56 +388,52 @@ export class EmailService {
             <p>Best regards,<br>The ProLegal Team</p>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Task comment email sent to ${data.assignedByEmail}`);
-    } catch (error) {
-      console.error('❌ Error sending task comment email:', error);
-      throw new Error('Failed to send task comment email');
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Task comment email sent to ${data.assignedByEmail}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending task comment email:', error);
+            throw new Error('Failed to send task comment email');
+        }
     }
-  }
-
-  static async sendContractExpiryNotification(data: ContractExpiryData, recipientEmail: string, recipientName: string, notificationType: 'reminder' | 'urgent' | 'expired'): Promise<void> {
-    try {
-      const getSubject = () => {
-        switch (notificationType) {
-          case 'reminder':
-            return `Contract Expiry Reminder: ${data.contractTitle} - ${data.daysUntilExpiry} days remaining`;
-          case 'urgent':
-            return `URGENT: Contract Expiring Soon - ${data.contractTitle} - ${data.daysUntilExpiry} days remaining`;
-          case 'expired':
-            return `CONTRACT EXPIRED: ${data.contractTitle} - Action Required`;
-        }
-      };
-
-      const getColor = () => {
-        switch (notificationType) {
-          case 'reminder':
-            return '#d97706'; // Orange
-          case 'urgent':
-            return '#dc2626'; // Red
-          case 'expired':
-            return '#dc2626'; // Red
-        }
-      };
-
-      const getMessage = () => {
-        switch (notificationType) {
-          case 'reminder':
-            return `This contract will expire in ${data.daysUntilExpiry} days. Please review and take necessary action.`;
-          case 'urgent':
-            return `URGENT: This contract will expire in ${data.daysUntilExpiry} days. Immediate action is required.`;
-          case 'expired':
-            return `This contract has expired today. Immediate action is required to prevent any legal or operational issues.`;
-        }
-      };
-
-      const mailOptions = {
-        from: `"ProLegal System" <${emailConfig.auth.user}>`,
-        to: recipientEmail,
-        subject: getSubject(),
-        html: `
+    static async sendContractExpiryNotification(data, recipientEmail, recipientName, notificationType) {
+        try {
+            const getSubject = () => {
+                switch (notificationType) {
+                    case 'reminder':
+                        return `Contract Expiry Reminder: ${data.contractTitle} - ${data.daysUntilExpiry} days remaining`;
+                    case 'urgent':
+                        return `URGENT: Contract Expiring Soon - ${data.contractTitle} - ${data.daysUntilExpiry} days remaining`;
+                    case 'expired':
+                        return `CONTRACT EXPIRED: ${data.contractTitle} - Action Required`;
+                }
+            };
+            const getColor = () => {
+                switch (notificationType) {
+                    case 'reminder':
+                        return '#d97706'; // Orange
+                    case 'urgent':
+                        return '#dc2626'; // Red
+                    case 'expired':
+                        return '#dc2626'; // Red
+                }
+            };
+            const getMessage = () => {
+                switch (notificationType) {
+                    case 'reminder':
+                        return `This contract will expire in ${data.daysUntilExpiry} days. Please review and take necessary action.`;
+                    case 'urgent':
+                        return `URGENT: This contract will expire in ${data.daysUntilExpiry} days. Immediate action is required.`;
+                    case 'expired':
+                        return `This contract has expired today. Immediate action is required to prevent any legal or operational issues.`;
+                }
+            };
+            const mailOptions = {
+                from: `"ProLegal System" <${emailConfig.auth.user}>`,
+                to: recipientEmail,
+                subject: getSubject(),
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background-color: ${getColor()}; color: white; padding: 20px; text-align: center;">
               <h1 style="margin: 0;">ProLegal</h1>
@@ -650,44 +528,40 @@ export class EmailService {
             </div>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Contract expiry notification sent to ${recipientEmail} for contract ${data.contractId}`);
-    } catch (error) {
-      console.error('❌ Error sending contract expiry notification:', error);
-      throw new Error('Failed to send contract expiry notification');
-    }
-  }
-
-  /**
-   * Send event invitation email
-   */
-  static async sendEventInvitation(data: EventInvitationData): Promise<void> {
-    try {
-      const recipientEmail = data.attendeeEmail;
-      const recipientName = data.attendeeName;
-
-      const getEventTypeColor = () => {
-        switch (data.eventType) {
-          case 'court_date': return '#dc2626';
-          case 'deadline': return '#d97706';
-          case 'meeting': return '#059669';
-          case 'client_meeting': return '#2563eb';
-          case 'internal_meeting': return '#7c3aed';
-          default: return '#6b7280';
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Contract expiry notification sent to ${recipientEmail} for contract ${data.contractId}`);
         }
-      };
-
-      const getEventTypeLabel = () => {
-        return data.eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-      };
-
-      const mailOptions = {
-        from: `"ProLegal Calendar" <${emailConfig.auth.user}>`,
-        to: recipientEmail,
-        subject: `📅 Event Invitation: ${data.eventTitle}`,
-        html: `
+        catch (error) {
+            console.error('❌ Error sending contract expiry notification:', error);
+            throw new Error('Failed to send contract expiry notification');
+        }
+    }
+    /**
+     * Send event invitation email
+     */
+    static async sendEventInvitation(data) {
+        try {
+            const recipientEmail = data.attendeeEmail;
+            const recipientName = data.attendeeName;
+            const getEventTypeColor = () => {
+                switch (data.eventType) {
+                    case 'court_date': return '#dc2626';
+                    case 'deadline': return '#d97706';
+                    case 'meeting': return '#059669';
+                    case 'client_meeting': return '#2563eb';
+                    case 'internal_meeting': return '#7c3aed';
+                    default: return '#6b7280';
+                }
+            };
+            const getEventTypeLabel = () => {
+                return data.eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            };
+            const mailOptions = {
+                from: `"ProLegal Calendar" <${emailConfig.auth.user}>`,
+                to: recipientEmail,
+                subject: `📅 Event Invitation: ${data.eventTitle}`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background-color: #1f2937; color: white; padding: 20px; text-align: center;">
               <h1 style="margin: 0;">📅 ProLegal Calendar</h1>
@@ -771,27 +645,26 @@ export class EmailService {
             </div>
           </div>
         `
-      };
-      
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Event invitation sent to ${recipientEmail} for event ${data.eventId}`);
-    } catch (error) {
-      console.error('❌ Error sending event invitation:', error);
-      // Don't throw error, just log it to prevent blocking the response
-      console.log('Continuing despite email error...');
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Event invitation sent to ${recipientEmail} for event ${data.eventId}`);
+        }
+        catch (error) {
+            console.error('❌ Error sending event invitation:', error);
+            // Don't throw error, just log it to prevent blocking the response
+            console.log('Continuing despite email error...');
+        }
     }
-  }
-
-  /**
-   * Send compliance survey notification email
-   */
-  static async sendComplianceSurveyNotification(data: ComplianceSurveyData): Promise<boolean> {
-    try {
-      const mailOptions = {
-        from: emailConfig.auth.user,
-        to: data.recipientEmail,
-        subject: `Compliance Survey Required: ${data.complianceRunTitle}`,
-        html: `
+    /**
+     * Send compliance survey notification email
+     */
+    static async sendComplianceSurveyNotification(data) {
+        try {
+            const mailOptions = {
+                from: emailConfig.auth.user,
+                to: data.recipientEmail,
+                subject: `Compliance Survey Required: ${data.complianceRunTitle}`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
               <h1 style="margin: 0; font-size: 24px;">Compliance Survey Required</h1>
@@ -844,41 +717,38 @@ export class EmailService {
             </div>
           </div>
         `
-      };
-
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Compliance survey notification sent to ${data.recipientEmail} for run ${data.complianceRunId}`);
-      return true;
-    } catch (error) {
-      console.error('❌ Error sending compliance survey notification:', error);
-      return false;
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Compliance survey notification sent to ${data.recipientEmail} for run ${data.complianceRunId}`);
+            return true;
+        }
+        catch (error) {
+            console.error('❌ Error sending compliance survey notification:', error);
+            return false;
+        }
     }
-  }
-
-  /**
-   * Send compliance reminder email
-   */
-  static async sendComplianceReminder(data: ComplianceReminderData): Promise<boolean> {
-    try {
-      const reminderTypeText = {
-        'two_weeks': '2 weeks before due date',
-        'one_week': '1 week before due date',
-        'due_date': 'Due today',
-        'overdue': 'Overdue'
-      };
-
-      const urgencyColor = data.reminderType === 'due_date' || data.reminderType === 'overdue' ? '#dc2626' : '#f59e0b';
-      const urgencyText = data.reminderType === 'due_date' || data.reminderType === 'overdue' ? 'URGENT' : 'REMINDER';
-
-      const mailOptions = {
-        from: `"ProLegal Compliance" <${emailConfig.auth.user}>`,
-        to: data.recipientEmail,
-        subject: `Compliance ${urgencyText}: ${data.complianceName} - ${reminderTypeText[data.reminderType as keyof typeof reminderTypeText]}`,
-        html: `
+    /**
+     * Send compliance reminder email
+     */
+    static async sendComplianceReminder(data) {
+        try {
+            const reminderTypeText = {
+                'two_weeks': '2 weeks before due date',
+                'one_week': '1 week before due date',
+                'due_date': 'Due today',
+                'overdue': 'Overdue'
+            };
+            const urgencyColor = data.reminderType === 'due_date' || data.reminderType === 'overdue' ? '#dc2626' : '#f59e0b';
+            const urgencyText = data.reminderType === 'due_date' || data.reminderType === 'overdue' ? 'URGENT' : 'REMINDER';
+            const mailOptions = {
+                from: `"ProLegal Compliance" <${emailConfig.auth.user}>`,
+                to: data.recipientEmail,
+                subject: `Compliance ${urgencyText}: ${data.complianceName} - ${reminderTypeText[data.reminderType]}`,
+                html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, ${urgencyColor} 0%, ${urgencyColor}dd 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
               <h1 style="margin: 0; font-size: 24px;">Compliance ${urgencyText}</h1>
-              <p style="margin: 10px 0 0 0; font-size: 16px;">${reminderTypeText[data.reminderType as keyof typeof reminderTypeText]}</p>
+              <p style="margin: 10px 0 0 0; font-size: 16px;">${reminderTypeText[data.reminderType]}</p>
             </div>
             
             <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
@@ -929,14 +799,15 @@ export class EmailService {
             </div>
           </div>
         `
-      };
-
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Compliance reminder sent to ${data.recipientEmail} for ${data.complianceName}`);
-      return true;
-    } catch (error) {
-      console.error('❌ Error sending compliance reminder:', error);
-      return false;
+            };
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Compliance reminder sent to ${data.recipientEmail} for ${data.complianceName}`);
+            return true;
+        }
+        catch (error) {
+            console.error('❌ Error sending compliance reminder:', error);
+            return false;
+        }
     }
-  }
 }
+exports.EmailService = EmailService;

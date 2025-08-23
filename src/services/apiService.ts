@@ -15,10 +15,12 @@ const api = axios.create({
 // Request interceptor for authentication and logging
 api.interceptors.request.use(
   (config) => {
-    // Add authentication token if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Add authentication token if available and not skipping auth
+    if (!config.skipAuth) {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
     
     // Don't set Content-Type for FormData (let browser set it with boundary)
@@ -50,8 +52,8 @@ api.interceptors.response.use(
 // Generic API methods
 export const apiService = {
   // GET request
-  async get<T>(endpoint: string, params?: any): Promise<T> {
-    const response = await api.get(endpoint, { params });
+  async get<T>(endpoint: string, config?: any): Promise<T> {
+    const response = await api.get(endpoint, config);
     return response.data;
   },
 

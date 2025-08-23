@@ -1,48 +1,51 @@
-import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.pool = void 0;
+exports.testConnection = testConnection;
+exports.initializeDatabase = initializeDatabase;
+exports.generateUUID = generateUUID;
+const promise_1 = __importDefault(require("mysql2/promise"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'prolegal_db',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'prolegal_db',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    acquireTimeout: 60000,
+    timeout: 60000,
+    reconnect: true
 };
-
 // Create connection pool
-export const pool = mysql.createPool(dbConfig);
-
+exports.pool = promise_1.default.createPool(dbConfig);
 // Test database connection
-export async function testConnection() {
-  try {
-    const connection = await pool.getConnection();
-    console.log('✅ Database connected successfully');
-    connection.release();
-    return true;
-  } catch (error) {
-    console.error('❌ Database connection failed:', error);
-    return false;
-  }
+async function testConnection() {
+    try {
+        const connection = await exports.pool.getConnection();
+        console.log('✅ Database connected successfully');
+        connection.release();
+        return true;
+    }
+    catch (error) {
+        console.error('❌ Database connection failed:', error);
+        return false;
+    }
 }
-
 // Initialize database tables
-export async function initializeDatabase() {
-  try {
-    const connection = await pool.getConnection();
-    
-    console.log('🗄️ Initializing database schema...');
-    
-    // 1. Users table (core user management)
-    await connection.execute(`
+async function initializeDatabase() {
+    try {
+        const connection = await exports.pool.getConnection();
+        console.log('🗄️ Initializing database schema...');
+        // 1. Users table (core user management)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(36) PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -66,9 +69,8 @@ export async function initializeDatabase() {
         INDEX idx_last_login (last_login)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 2. User sessions for authentication
-    await connection.execute(`
+        // 2. User sessions for authentication
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS user_sessions (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL,
@@ -81,9 +83,8 @@ export async function initializeDatabase() {
         INDEX idx_expires_at (expires_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 3. Departments table
-    await connection.execute(`
+        // 3. Departments table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS departments (
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -100,9 +101,8 @@ export async function initializeDatabase() {
         INDEX idx_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 4. User department assignments (many-to-many relationship)
-    await connection.execute(`
+        // 4. User department assignments (many-to-many relationship)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS user_departments (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL,
@@ -118,9 +118,8 @@ export async function initializeDatabase() {
         INDEX idx_department_id (department_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 5. Cases table (main legal cases)
-    await connection.execute(`
+        // 5. Cases table (main legal cases)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS cases (
         id VARCHAR(36) PRIMARY KEY,
         case_number VARCHAR(255) UNIQUE NOT NULL,
@@ -154,9 +153,8 @@ export async function initializeDatabase() {
         INDEX idx_judge_name (judge_name)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 6. Case assignments (many-to-many relationship)
-    await connection.execute(`
+        // 6. Case assignments (many-to-many relationship)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS case_assignments (
         id VARCHAR(36) PRIMARY KEY,
         case_id VARCHAR(36) NOT NULL,
@@ -173,9 +171,8 @@ export async function initializeDatabase() {
         INDEX idx_user_id (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 7. Case updates/activity log
-    await connection.execute(`
+        // 7. Case updates/activity log
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS case_updates (
         id VARCHAR(36) PRIMARY KEY,
         case_id VARCHAR(36) NOT NULL,
@@ -193,9 +190,8 @@ export async function initializeDatabase() {
         INDEX idx_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 8. Vendors table
-    await connection.execute(`
+        // 8. Vendors table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS vendors (
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -220,9 +216,8 @@ export async function initializeDatabase() {
         INDEX idx_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 9. Contract Types table
-    await connection.execute(`
+        // 9. Contract Types table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS contract_types (
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -236,9 +231,8 @@ export async function initializeDatabase() {
         INDEX idx_is_active (is_active)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 10. Contracts table
-    await connection.execute(`
+        // 10. Contracts table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS contracts (
         id VARCHAR(36) PRIMARY KEY,
         contract_number VARCHAR(255) UNIQUE NOT NULL,
@@ -269,9 +263,8 @@ export async function initializeDatabase() {
         INDEX idx_end_date (end_date)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 10. Contract assignments
-    await connection.execute(`
+        // 10. Contract assignments
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS contract_assignments (
         id VARCHAR(36) PRIMARY KEY,
         contract_id VARCHAR(36) NOT NULL,
@@ -288,9 +281,8 @@ export async function initializeDatabase() {
         INDEX idx_user_id (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 11. Documents table
-    await connection.execute(`
+        // 11. Documents table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS documents (
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(500) NOT NULL,
@@ -320,9 +312,8 @@ export async function initializeDatabase() {
         INDEX idx_case_id (case_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 12. Document versions (for version control)
-    await connection.execute(`
+        // 12. Document versions (for version control)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS document_versions (
         id VARCHAR(36) PRIMARY KEY,
         document_id VARCHAR(36) NOT NULL,
@@ -339,9 +330,8 @@ export async function initializeDatabase() {
         INDEX idx_document_id (document_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 13. Tasks table
-    await connection.execute(`
+        // 13. Tasks table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS tasks (
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -371,9 +361,8 @@ export async function initializeDatabase() {
         INDEX idx_case_id (case_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 13.1. Task comments table
-    await connection.execute(`
+        // 13.1. Task comments table
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS task_comments (
         id VARCHAR(36) PRIMARY KEY,
         task_id VARCHAR(36) NOT NULL,
@@ -388,9 +377,8 @@ export async function initializeDatabase() {
         INDEX idx_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 14. Scraped legal data
-    await connection.execute(`
+        // 14. Scraped legal data
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS scraped_data (
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(500) NOT NULL,
@@ -411,9 +399,8 @@ export async function initializeDatabase() {
         INDEX idx_scraped_at (scraped_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 15. Scraping sources configuration
-    await connection.execute(`
+        // 15. Scraping sources configuration
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS scraping_sources (
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -430,9 +417,8 @@ export async function initializeDatabase() {
         INDEX idx_is_active (is_active)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 16. Audit log for system activities
-    await connection.execute(`
+        // 16. Audit log for system activities
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS audit_log (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36),
@@ -452,9 +438,8 @@ export async function initializeDatabase() {
         INDEX idx_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 17. Compliance surveys
-    await connection.execute(`
+        // 17. Compliance surveys
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_surveys (
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -473,9 +458,8 @@ export async function initializeDatabase() {
         INDEX idx_department_id (department_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 18. Compliance runs (new table for compliance campaigns)
-    await connection.execute(`
+        // 18. Compliance runs (new table for compliance campaigns)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_runs (
         id VARCHAR(36) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -483,11 +467,7 @@ export async function initializeDatabase() {
         frequency ENUM('once', 'weekly', 'monthly', 'bimonthly', 'quarterly', 'annually') NOT NULL DEFAULT 'once',
         start_date DATE NOT NULL,
         due_date DATE NOT NULL,
-        recurring_day INT NULL,
-        is_recurring BOOLEAN DEFAULT FALSE,
-        last_run_date DATE NULL,
-        next_run_date DATE NULL,
-        status ENUM('draft', 'active', 'completed', 'expired', 'paused') NOT NULL DEFAULT 'draft',
+        status ENUM('draft', 'active', 'completed', 'expired') NOT NULL DEFAULT 'draft',
         created_by VARCHAR(36) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -495,14 +475,11 @@ export async function initializeDatabase() {
         FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
         INDEX idx_status (status),
         INDEX idx_due_date (due_date),
-        INDEX idx_start_date (start_date),
-        INDEX idx_next_run_date (next_run_date),
-        INDEX idx_is_recurring (is_recurring)
+        INDEX idx_start_date (start_date)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 19. Compliance run departments (many-to-many relationship)
-    await connection.execute(`
+        // 19. Compliance run departments (many-to-many relationship)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_run_departments (
         id VARCHAR(36) PRIMARY KEY,
         compliance_run_id VARCHAR(36) NOT NULL,
@@ -516,9 +493,8 @@ export async function initializeDatabase() {
         INDEX idx_department_id (department_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 20. Compliance questions
-    await connection.execute(`
+        // 20. Compliance questions
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_questions (
         id VARCHAR(36) PRIMARY KEY,
         compliance_run_id VARCHAR(36) NOT NULL,
@@ -535,9 +511,8 @@ export async function initializeDatabase() {
         INDEX idx_order_index (order_index)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 21. Compliance recipients (users who need to complete surveys)
-    await connection.execute(`
+        // 21. Compliance recipients (users who need to complete surveys)
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_recipients (
         id VARCHAR(36) PRIMARY KEY,
         compliance_run_id VARCHAR(36) NOT NULL,
@@ -560,9 +535,8 @@ export async function initializeDatabase() {
         INDEX idx_survey_link_token (survey_link_token)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    // 22. Compliance responses
-    await connection.execute(`
+        // 22. Compliance responses
+        await connection.execute(`
       CREATE TABLE IF NOT EXISTS compliance_responses (
         id VARCHAR(36) PRIMARY KEY,
         compliance_run_id VARCHAR(36) NOT NULL,
@@ -582,21 +556,20 @@ export async function initializeDatabase() {
         INDEX idx_question_id (question_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    connection.release();
-    console.log('✅ Database schema initialized successfully');
-    console.log('📊 Created 22 tables with proper relationships');
-  } catch (error) {
-    console.error('❌ Database initialization failed:', error);
-    throw error;
-  }
+        connection.release();
+        console.log('✅ Database schema initialized successfully');
+        console.log('📊 Created 22 tables with proper relationships');
+    }
+    catch (error) {
+        console.error('❌ Database initialization failed:', error);
+        throw error;
+    }
 }
-
 // Helper function to generate UUID
-export function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }

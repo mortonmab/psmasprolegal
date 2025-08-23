@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Users, Calendar, CheckCircle, Clock, FileText, Eye, EyeOff } from 'lucide-react';
+import { X, Users, Calendar, CheckCircle, Clock, FileText, Eye, EyeOff, Download, Share2, Mail } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ComplianceService } from '../../services/complianceService';
 import { format } from 'date-fns';
+import { useToast } from '../ui/use-toast';
 
 interface ComplianceSurveyModalProps {
   isOpen: boolean;
@@ -66,10 +67,18 @@ interface DepartmentResponses {
 
 export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceSurveyModalProps) {
   const [surveyDetails, setSurveyDetails] = useState<SurveyDetails | null>(null);
+  const [surveyResponses, setSurveyResponses] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingResponses, setLoadingResponses] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'responses'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'responses' | 'department'>('overview');
   const [showResponses, setShowResponses] = useState<Record<string, boolean>>({});
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareMessage, setShareMessage] = useState('');
+  const [sharing, setSharing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isOpen && surveyId) {
@@ -96,6 +105,72 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
       return format(new Date(dateString), 'MMM dd, yyyy');
     } catch {
       return 'Invalid date';
+    }
+  };
+
+  const loadSurveyResponses = async () => {
+    try {
+      setLoadingResponses(true);
+      setError(null);
+      const data = await ComplianceService.getSurveyResponses(surveyId);
+      setSurveyResponses(data);
+    } catch (error) {
+      console.error('Error loading survey responses:', error);
+      setError('Failed to load survey responses');
+    } finally {
+      setLoadingResponses(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    try {
+      setDownloading(true);
+      await ComplianceService.downloadSurveyReport(surveyId);
+      toast({
+        title: 'Success',
+        description: 'Report downloaded successfully',
+      });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to download report',
+        variant: 'destructive'
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleShareReport = async () => {
+    if (!shareEmail.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter an email address',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      setSharing(true);
+      await ComplianceService.shareSurveyReport(surveyId, shareEmail, shareMessage);
+      toast({
+        title: 'Success',
+        description: 'Report sent successfully',
+      });
+      setShowShareModal(false);
+      setShareEmail('');
+      setShareMessage('');
+    } catch (error) {
+      console.error('Error sharing report:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to share report',
+        variant: 'destructive'
+      });
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -213,6 +288,20 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
                       </div>
                     </div>
                   </div>
+                  {surveyDetails.run.is_recurring && (
+                    <div className="bg-white rounded-lg p-4 border">
+                      <div className="flex items-center">
+                        <Clock className="h-8 w-8 text-purple-500 mr-3" />
+                        <div>
+                          <p className="text-2xl font-bold text-gray-900">{surveyDetails.run.frequency}</p>
+                          <p className="text-sm text-gray-600">Recurring</p>
+                          {surveyDetails.run.recurring_day && (
+                            <p className="text-xs text-gray-500">Day {surveyDetails.run.recurring_day}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="bg-white rounded-lg p-4 border">
                     <div className="flex items-center">
                       <CheckCircle className="h-8 w-8 text-green-500 mr-3" />
@@ -247,6 +336,30 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
                 </div>
               </div>
 
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 mb-6">
+                <Button
+                  onClick={handleDownloadReport}
+                  disabled={downloading}
+                  variant="outline"
+                  className="flex items-center"
+                >
+                  {downloading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Download Report
+                </Button>
+                <Button
+                  onClick={() => setShowShareModal(true)}
+                  className="flex items-center"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Report
+                </Button>
+              </div>
+
               {/* Tabs */}
               <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
@@ -268,7 +381,17 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
-                    Department Responses
+                    Responses by Department
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('department')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'department'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Department Overview
                   </button>
                 </nav>
               </div>
@@ -323,6 +446,103 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
               )}
 
               {activeTab === 'responses' && (
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-lg font-semibold text-gray-900">Responses by Department</h4>
+                    <Button
+                      onClick={loadSurveyResponses}
+                      disabled={loadingResponses}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {loadingResponses ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                      ) : (
+                        <Eye className="h-4 w-4 mr-2" />
+                      )}
+                      Load Responses
+                    </Button>
+                  </div>
+
+                  {loadingResponses ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      <span className="ml-3 text-gray-600">Loading responses...</span>
+                    </div>
+                  ) : surveyResponses ? (
+                    <div className="space-y-6">
+                      {surveyResponses.responses && surveyResponses.responses.length > 0 ? (
+                        (() => {
+                          // Group responses by department
+                          const departmentGroups = new Map();
+                          surveyResponses.responses.forEach((response: any) => {
+                            const deptName = response.departmentName || 'Unknown Department';
+                            if (!departmentGroups.has(deptName)) {
+                              departmentGroups.set(deptName, []);
+                            }
+                            departmentGroups.get(deptName).push(response);
+                          });
+
+                          return Array.from(departmentGroups.entries()).map(([deptName, responses]: [string, any[]]) => (
+                            <div key={deptName} className="bg-white border border-gray-200 rounded-lg">
+                              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                <h4 className="text-lg font-semibold text-gray-900">{deptName}</h4>
+                                <p className="text-sm text-gray-600">{responses.length} response{responses.length !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div className="p-4 space-y-4">
+                                {responses.map((response: any) => (
+                                  <div key={response.id} className="border border-gray-100 rounded-lg p-4 bg-gray-50">
+                                    <div className="mb-3">
+                                      <h5 className="font-medium text-gray-900">{response.userName}</h5>
+                                      <p className="text-sm text-gray-600">{response.userEmail}</p>
+                                    </div>
+                                    <div className="border-t pt-3">
+                                      <p className="font-medium text-gray-900 mb-2">{response.questionText}</p>
+                                      <div className="space-y-2">
+                                        <p className="text-sm text-gray-700">
+                                          <span className="font-medium">Answer:</span> {response.answer || 'No answer provided'}
+                                        </p>
+                                        {response.score !== null && (
+                                          <p className="text-sm text-gray-700">
+                                            <span className="font-medium">Score:</span> {response.score}
+                                          </p>
+                                        )}
+                                        {response.comment && (
+                                          <p className="text-sm text-gray-700">
+                                            <span className="font-medium">Comment:</span> {response.comment}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()
+                      ) : (
+                        <div className="text-center py-8">
+                          <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No responses yet</h3>
+                          <p className="text-gray-500">Survey responses will appear here once participants complete the survey.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Eye className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">View Survey Responses</h3>
+                      <p className="text-gray-500 mb-4">Click "Load Responses" to view individual survey responses.</p>
+                      <Button onClick={loadSurveyResponses} variant="outline">
+                        <Eye className="h-4 w-4 mr-2" />
+                        Load Responses
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'department' && (
                 <div>
                   <h4 className="text-lg font-semibold text-gray-900 mb-4">Department Responses</h4>
                   <div className="space-y-4">
@@ -402,6 +622,80 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
           ) : null}
         </div>
       </div>
+
+      {/* Share Report Modal */}
+      {showShareModal && (
+        <div className="fixed z-60 inset-0 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowShareModal(false)} />
+            
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Share Survey Report</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowShareModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    id="email"
+                    value={shareEmail}
+                    onChange={(e) => setShareEmail(e.target.value)}
+                    placeholder="Enter email address"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
+                    Message (Optional)
+                  </label>
+                  <textarea
+                    id="message"
+                    value={shareMessage}
+                    onChange={(e) => setShareMessage(e.target.value)}
+                    placeholder="Add a personal message..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowShareModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleShareReport}
+                    disabled={sharing || !shareEmail.trim()}
+                    className="flex items-center"
+                  >
+                    {sharing ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ) : (
+                      <Mail className="h-4 w-4 mr-2" />
+                    )}
+                    Send Report
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -19,12 +19,14 @@ export const documentService = {
     file: File, 
     title: string, 
     documentType: Document['document_type'],
+    category: Document['category'],
     uploadedBy: string
   ): Promise<Document> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', title);
     formData.append('document_type', documentType);
+    formData.append('category', category);
     formData.append('uploaded_by', uploadedBy);
 
     return await apiService.post<Document>(`/cases/${caseId}/documents/upload`, formData);
@@ -35,15 +37,34 @@ export const documentService = {
     file: File, 
     title: string, 
     documentType: Document['document_type'],
+    category: Document['category'],
     uploadedBy: string
   ): Promise<Document> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', title);
     formData.append('document_type', documentType);
+    formData.append('category', category);
     formData.append('uploaded_by', uploadedBy);
 
     return await apiService.post<Document>(`/contracts/${contractId}/documents/upload`, formData);
+  },
+
+  async uploadGeneralDocument(
+    file: File, 
+    title: string, 
+    documentType: Document['document_type'],
+    category: Document['category'],
+    uploadedBy: string
+  ): Promise<Document> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('document_type', documentType);
+    formData.append('category', category);
+    formData.append('uploaded_by', uploadedBy);
+
+    return await apiService.post<Document>(`/documents/upload`, formData);
   },
 
   async deleteDocument(documentId: string): Promise<void> {

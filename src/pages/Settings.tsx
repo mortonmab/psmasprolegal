@@ -529,35 +529,121 @@ export function Settings() {
 }
 
 function ScrapingSettings() {
-  const [sources, setSources] = useState<ScrapingSource[]>(scrapingService.getSources());
+  const [sources, setSources] = useState<ScrapingSource[]>([]);
   const [editingSource, setEditingSource] = useState<SourceFormData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const handleSourceToggle = (sourceId: string, enabled: boolean) => {
-    scrapingService.updateSource(sourceId, { enabled });
-    setSources(scrapingService.getSources());
-  };
+  // Fetch sources on component mount
+  useEffect(() => {
+    fetchSources();
+  }, []);
 
-  const handleSourceEdit = (source: SourceFormData) => {
-    if (source.id) {
-      scrapingService.updateSource(source.id, source);
-    } else {
-      // Generate a new ID for new sources
-      const newSource = {
-        ...source,
-        id: `source-${Date.now()}`
-      };
-      scrapingService.addSource(newSource);
-    }
-    setSources(scrapingService.getSources());
-    setEditingSource(null);
-  };
-
-  const handleSourceDelete = (sourceId: string) => {
-    if (confirm('Are you sure you want to delete this source?')) {
-      scrapingService.deleteSource(sourceId);
-      setSources(scrapingService.getSources());
+  const fetchSources = async () => {
+    try {
+      setLoading(true);
+      const sourcesData = await scrapingService.getSources();
+      setSources(sourcesData);
+    } catch (error) {
+      console.error('Error fetching sources:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch scraping sources",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handleSourceToggle = async (sourceId: string, enabled: boolean) => {
+    try {
+      const updatedSource = await scrapingService.updateSource(sourceId, { enabled });
+      if (updatedSource) {
+        setSources(prev => prev.map(s => s.id === sourceId ? updatedSource : s));
+        toast({
+          title: "Success",
+          description: `Source ${enabled ? 'enabled' : 'disabled'} successfully`
+        });
+      }
+    } catch (error) {
+      console.error('Error updating source:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update source",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSourceEdit = async (source: SourceFormData) => {
+    try {
+      let updatedSource: ScrapingSource | null = null;
+      
+      if (source.id) {
+        // Update existing source
+        updatedSource = await scrapingService.updateSource(source.id, source);
+      } else {
+        // Create new source
+        updatedSource = await scrapingService.createSource({
+          name: source.name,
+          url: source.url,
+          type: source.type,
+          enabled: source.enabled,
+          selectors: source.selectors
+        });
+      }
+      
+      if (updatedSource) {
+        await fetchSources(); // Refresh the list
+        setEditingSource(null);
+        toast({
+          title: "Success",
+          description: `Source ${source.id ? 'updated' : 'created'} successfully`
+        });
+      }
+    } catch (error) {
+      console.error('Error saving source:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save source",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSourceDelete = async (sourceId: string) => {
+    if (!confirm('Are you sure you want to delete this source?')) return;
+    
+    try {
+      const success = await scrapingService.deleteSource(sourceId);
+      if (success) {
+        await fetchSources(); // Refresh the list
+        toast({
+          title: "Success",
+          description: "Source deleted successfully"
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting source:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete source",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-lg font-medium text-gray-900">Web Scraping Sources</h2>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-gray-500">Loading sources...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -579,51 +665,70 @@ function ScrapingSettings() {
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {sources.map(source => (
-            <li key={source.id} className="px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {source.name}
-                    </p>
-                    <Toggle
-                      checked={source.enabled}
-                      onCheckedChange={(checked) => handleSourceToggle(source.id, checked)}
-                    />
+        {sources.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-gray-500 mb-4">No scraping sources configured</div>
+            <button
+              onClick={() => setEditingSource({
+                id: '',
+                name: '',
+                url: '',
+                type: 'case-law',
+                enabled: true,
+                selectors: { title: '', content: '' }
+              })}
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+            >
+              Add your first source
+            </button>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-200">
+            {sources.map(source => (
+              <li key={source.id} className="px-4 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {source.name}
+                      </p>
+                      <Toggle
+                        checked={source.enabled}
+                        onCheckedChange={(checked) => handleSourceToggle(source.id, checked)}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">{source.url}</p>
+                    <div className="mt-2 flex items-center space-x-2 text-xs text-gray-500">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                        {source.type}
+                      </span>
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm text-gray-500">{source.url}</p>
-                  <div className="mt-2 flex items-center space-x-2 text-xs text-gray-500">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                      {source.type}
-                    </span>
+                  <div className="ml-4 flex items-center space-x-2">
+                    <button
+                      onClick={() => setEditingSource(source)}
+                      className="text-gray-400 hover:text-gray-500"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleSourceDelete(source.id)}
+                      className="text-red-400 hover:text-red-500"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
-                <div className="ml-4 flex items-center space-x-2">
-                  <button
-                    onClick={() => setEditingSource(source)}
-                    className="text-gray-400 hover:text-gray-500"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleSourceDelete(source.id)}
-                    className="text-red-400 hover:text-red-500"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Edit/Add Source Modal */}
       {editingSource && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               {editingSource.id ? 'Edit Source' : 'Add Source'}
             </h3>

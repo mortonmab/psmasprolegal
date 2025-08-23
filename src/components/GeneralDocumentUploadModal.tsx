@@ -8,19 +8,18 @@ import { useAuth } from '../hooks/useAuth';
 import { documentService } from '../services/documentService';
 import type { Document } from '../lib/types';
 
-interface ContractDocumentUploadModalProps {
+interface GeneralDocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUploadSuccess: (document: Document) => void;
-  contractId: string;
 }
 
-export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, contractId }: ContractDocumentUploadModalProps) {
+export function GeneralDocumentUploadModal({ isOpen, onClose, onUploadSuccess }: GeneralDocumentUploadModalProps) {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
-  const [documentType, setDocumentType] = useState<Document['document_type']>('contract');
-  const [category, setCategory] = useState<Document['category']>('contracts');
+  const [documentType, setDocumentType] = useState<Document['document_type']>('other');
+  const [category, setCategory] = useState<Document['category']>('other');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +72,7 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
     setError(null);
 
     try {
-      const document = await documentService.uploadContractDocument(
-        contractId,
+      const document = await documentService.uploadGeneralDocument(
         selectedFile,
         title.trim(),
         documentType,
@@ -84,8 +82,8 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
       
       // Reset form
       setTitle('');
-      setDocumentType('contract');
-      setCategory('contracts');
+      setDocumentType('other');
+      setCategory('other');
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -104,8 +102,8 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
   const handleClose = () => {
     if (!isUploading) {
       setTitle('');
-      setDocumentType('contract');
-      setCategory('contracts');
+      setDocumentType('other');
+      setCategory('other');
       setSelectedFile(null);
       setError(null);
       if (fileInputRef.current) {
@@ -127,8 +125,8 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
               <Upload className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Upload Contract Document</h2>
-              <p className="text-sm text-gray-500">Contract #{contractId}</p>
+              <h2 className="text-lg font-semibold text-gray-900">Upload Document</h2>
+              <p className="text-sm text-gray-500">General document upload</p>
             </div>
           </div>
           <button
@@ -180,34 +178,14 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
             </div>
           </div>
 
-          {/* Document Type */}
-          <div className="space-y-2">
-            <Label htmlFor="documentType">Document Type</Label>
-            <Select value={documentType} onValueChange={(value: Document['document_type']) => setDocumentType(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select document type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contract">Contract</SelectItem>
-                <SelectItem value="evidence">Evidence</SelectItem>
-                <SelectItem value="correspondence">Correspondence</SelectItem>
-                <SelectItem value="court_filing">Court Filing</SelectItem>
-                <SelectItem value="research">Research</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Category */}
           <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
+            <Label htmlFor="category">Category *</Label>
             <Select value={category} onValueChange={(value: Document['category']) => setCategory(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="contracts">Contracts</SelectItem>
-                <SelectItem value="cases">Cases</SelectItem>
                 <SelectItem value="title_deeds">Title Deeds</SelectItem>
                 <SelectItem value="policies">Policies</SelectItem>
                 <SelectItem value="frameworks">Frameworks</SelectItem>
@@ -216,6 +194,24 @@ export function ContractDocumentUploadModal({ isOpen, onClose, onUploadSuccess, 
                 <SelectItem value="management_minutes">Management Minutes</SelectItem>
                 <SelectItem value="sops">SOPS</SelectItem>
                 <SelectItem value="governance">Governance Documents</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Document Type */}
+          <div className="space-y-2">
+            <Label htmlFor="documentType">Document Type</Label>
+            <Select value={documentType} onValueChange={(value: Document['document_type']) => setDocumentType(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select document type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="evidence">Evidence</SelectItem>
+                <SelectItem value="correspondence">Correspondence</SelectItem>
+                <SelectItem value="court_filing">Court Filing</SelectItem>
+                <SelectItem value="research">Research</SelectItem>
+                <SelectItem value="contract">Contract</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>

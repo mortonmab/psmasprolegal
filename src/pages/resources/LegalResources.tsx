@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Search, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { scrapingService } from '../../services/scrapingService';
+import { scrapingService, ScrapedData } from '../../services/scrapingService';
 import { useToast } from '../../components/ui/use-toast';
 
 interface SearchResult {
@@ -12,6 +12,7 @@ interface SearchResult {
   link: string;
   date: string;
   tags: string[];
+  source_url?: string;
 }
 
 // Add new interface for crawl status
@@ -25,61 +26,91 @@ interface CrawlStatus {
 export function LegalResources() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [crawlStatus, setCrawlStatus] = useState<Record<string, CrawlStatus>>({
     'case-law': { type: 'case-law', status: 'idle' },
     'legislation': { type: 'legislation', status: 'idle' },
     'regulation': { type: 'regulation', status: 'idle' },
     'gazette': { type: 'gazette', status: 'idle' }
   });
-  const { addToast } = useToast();
+  const { toast } = useToast();
 
-  // Mock data for search results
-  const searchResults: SearchResult[] = [
-    {
-      id: 'case-1',
-      title: 'Smith v. Johnson',
-      type: 'case',
-      description: 'Case regarding corporate liability...',
-      link: '/resources/case-law',
-      date: '2024-01-15',
-      tags: ['Corporate Law', 'Liability']
-    },
-    {
-      id: 'leg-1',
-      title: 'Companies Act',
-      type: 'legislation',
-      description: 'Act 71 of 2008',
-      link: '/resources/legislation',
-      date: '2008',
-      tags: ['Corporate Law', 'Companies']
-    },
-    {
-      id: 'reg-1',
-      title: 'Companies Regulations',
-      type: 'regulation',
-      description: 'Regulations under Companies Act',
-      link: '/resources/regulations',
-      date: '2009',
-      tags: ['Corporate Law', 'Compliance']
-    },
-    {
-      id: 'gaz-1',
-      title: 'Government Gazette 45196',
-      type: 'gazette',
-      description: 'Contains various notices...',
-      link: '/resources/gazettes',
-      date: '2024-01-15',
-      tags: ['Notices', 'Regulations']
+  // Search scraped data when query changes
+  useEffect(() => {
+    const searchData = async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const response = await scrapingService.getScrapedData({
+          search: searchQuery,
+          limit: 10
+        });
+
+        if (response) {
+          const results: SearchResult[] = response.data.map((item: ScrapedData) => ({
+            id: item.id,
+            title: item.title,
+            type: mapSourceTypeToResultType(item.source_type),
+            description: item.content.substring(0, 200) + '...',
+            link: `/resources/${mapSourceTypeToRoute(item.source_type)}`,
+            date: item.date_published || item.scraped_at,
+            tags: item.keywords ? item.keywords.split(',').map(k => k.trim()) : [],
+            source_url: item.source_url
+          }));
+          setSearchResults(results);
+        }
+      } catch (error) {
+        console.error('Error searching scraped data:', error);
+        toast({
+          title: "Search Error",
+          description: "Failed to search legal resources",
+          variant: "destructive"
+        });
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const debounceTimer = setTimeout(searchData, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery, toast]);
+
+  const mapSourceTypeToResultType = (sourceType: string): 'case' | 'legislation' | 'regulation' | 'gazette' => {
+    switch (sourceType) {
+      case 'case_law':
+        return 'case';
+      case 'legislation':
+        return 'legislation';
+      case 'regulation':
+        return 'regulation';
+      case 'gazette':
+        return 'gazette';
+      default:
+        return 'case';
     }
-  ];
+  };
 
-  const filteredResults = searchQuery
-    ? searchResults.filter(result =>
-        result.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        result.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        result.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : [];
+  const mapSourceTypeToRoute = (sourceType: string): string => {
+    switch (sourceType) {
+      case 'case_law':
+        return 'case-law';
+      case 'legislation':
+        return 'legislation';
+      case 'regulation':
+        return 'regulations';
+      case 'gazette':
+        return 'gazettes';
+      default:
+        return 'case-law';
+    }
+  };
+
+  const filteredResults = searchResults;
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -118,10 +149,12 @@ export function LegalResources() {
         [type]: { type, status: 'crawling', progress: 0 }
       }));
 
-      const sources = scrapingService.getSources(type);
+      const sources = await scrapingService.getSources(type);
+      
+      console.log('Fetched sources for', type, ':', sources);
       
       if (sources.length === 0) {
-        addToast({
+        toast({
           title: "No sources configured",
           description: `Please configure sources for ${type} in settings first.`,
           variant: "destructive"
@@ -132,9 +165,25 @@ export function LegalResources() {
       // Start crawling with progress tracking
       for (let i = 0; i < sources.length; i++) {
         const source = sources[i];
-        if (!source.enabled) continue;
+        console.log('Processing source:', source);
+        
+        if (!source.enabled) {
+          console.log('Source disabled, skipping:', source.name);
+          continue;
+        }
+
+        if (!source.id) {
+          console.error('Source missing ID:', source);
+          toast({
+            title: "Source Error",
+            description: `Source ${source.name} is missing ID. Please check configuration.`,
+            variant: "destructive"
+          });
+          continue;
+        }
 
         try {
+          console.log('Scraping source with ID:', source.id);
           const result = await scrapingService.scrapeContent(source.id);
           
           if (result.status === 'queued') {
@@ -162,7 +211,7 @@ export function LegalResources() {
           }
         } catch (sourceError) {
           console.error(`Failed to scrape source ${source.name}:`, sourceError);
-          addToast({
+          toast({
             title: "Source Error",
             description: `Failed to scrape ${source.name}. Continuing with remaining sources.`,
             variant: "destructive"
@@ -180,7 +229,7 @@ export function LegalResources() {
         }
       }));
 
-      addToast({
+      toast({
         title: "Crawl Completed",
         description: `Successfully updated ${type} database.`
       });
@@ -192,7 +241,7 @@ export function LegalResources() {
         [type]: { type, status: 'error' }
       }));
 
-      addToast({
+      toast({
         title: "Crawl Failed",
         description: error instanceof Error ? error.message : 'Failed to update database. Please try again.',
         variant: "destructive"
@@ -269,16 +318,17 @@ export function LegalResources() {
             {/* Search Results Dropdown */}
             {showResults && searchQuery && (
               <div className="absolute z-10 mt-2 w-full bg-white rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                {filteredResults.length > 0 ? (
+                {isSearching ? (
+                  <div className="px-4 py-6 text-center text-gray-500">
+                    <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
+                    Searching...
+                  </div>
+                ) : filteredResults.length > 0 ? (
                   <div className="py-2">
                     {filteredResults.map((result) => (
-                      <Link
-                        key={result.id}
-                        to={result.link}
-                        className="block px-4 py-2 hover:bg-gray-50"
-                      >
+                      <div key={result.id} className="px-4 py-2 hover:bg-gray-50">
                         <div className="flex items-start justify-between">
-                          <div className="space-y-1">
+                          <div className="space-y-1 flex-1">
                             <h3 className="text-sm font-medium text-gray-900">{result.title}</h3>
                             <p className="text-sm text-gray-500">{result.description}</p>
                             <div className="flex flex-wrap items-center gap-1.5">
@@ -291,12 +341,26 @@ export function LegalResources() {
                                 </span>
                               ))}
                             </div>
+                            <div className="flex items-center space-x-2 text-xs text-gray-400">
+                              <span>{result.date}</span>
+                              {result.source_url && (
+                                <a
+                                  href={result.source_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-1 hover:text-blue-600"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  <span>View Source</span>
+                                </a>
+                              )}
+                            </div>
                           </div>
                           <span className={`ml-4 shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(result.type)}`}>
                             {getTypeLabel(result.type)}
                           </span>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 ) : (

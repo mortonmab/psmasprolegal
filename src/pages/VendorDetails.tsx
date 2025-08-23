@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft,
@@ -12,56 +12,104 @@ import {
   Edit2,
   Link as LinkIcon,
   Save,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
+import { vendorService } from '../services/vendorService';
+import { useToast } from '../components/ui/use-toast';
 
 type TabType = 'details' | 'contracts' | 'contacts';
+
+interface VendorContact {
+  id: number;
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+}
+
+interface VendorContract {
+  id: number;
+  title: string;
+  type: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  value: string;
+}
+
+interface VendorDetails {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  website: string;
+  taxId: string;
+  registrationDate: string;
+  industry: string;
+  description: string;
+  contacts: VendorContact[];
+  contracts: VendorContract[];
+}
 
 export function VendorDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [isEditing, setIsEditing] = useState(false);
+  const [vendorDetails, setVendorDetails] = useState<VendorDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  // Mock data - In a real app, this would come from an API
-  const vendorDetails = {
-    id: Number(id),
-    name: 'XYZ Corporation',
-    type: 'Service Provider',
-    status: 'active',
-    contactPerson: 'John Smith',
-    email: 'john@xyz.com',
-    phone: '+1 (555) 123-4567',
-    address: '123 Business Ave, Suite 100, New York, NY 10001',
-    website: 'www.xyzcorp.com',
-    taxId: '12-3456789',
-    registrationDate: '2024-01-15',
-    industry: 'Technology',
-    description: 'Leading provider of software solutions and IT services.',
-    contacts: [
-      { id: 1, name: 'John Smith', role: 'Primary Contact', email: 'john@xyz.com', phone: '+1 (555) 123-4567' },
-      { id: 2, name: 'Sarah Johnson', role: 'Billing Contact', email: 'sarah@xyz.com', phone: '+1 (555) 123-4568' }
-    ],
-    contracts: [
-      {
-        id: 1,
-        title: 'Software Development Services',
-        type: 'Service Agreement',
-        status: 'active',
-        startDate: '2024-01-01',
-        endDate: '2024-12-31',
-        value: '$50,000'
-      },
-      {
-        id: 2,
-        title: 'IT Support Agreement',
-        type: 'Service Agreement',
-        status: 'completed',
-        startDate: '2023-01-01',
-        endDate: '2023-12-31',
-        value: '$35,000'
-      }
-    ]
+  useEffect(() => {
+    if (id) {
+      loadVendorDetails();
+    }
+  }, [id]);
+
+  const loadVendorDetails = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const vendor = await vendorService.getVendorById(Number(id));
+      setVendorDetails(vendor);
+    } catch (err) {
+      console.error('Error loading vendor details:', err);
+      setError('Failed to load vendor details');
+      toast({
+        title: 'Error',
+        description: 'Failed to load vendor details',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async (formData: Partial<VendorDetails>) => {
+    try {
+      if (!vendorDetails) return;
+      
+      await vendorService.updateVendor(vendorDetails.id, formData);
+      await loadVendorDetails(); // Reload data
+      setIsEditing(false);
+      toast({
+        title: 'Success',
+        description: 'Vendor details updated successfully'
+      });
+    } catch (err) {
+      console.error('Error updating vendor:', err);
+      toast({
+        title: 'Error',
+        description: 'Failed to update vendor details',
+        variant: 'destructive'
+      });
+    }
   };
 
   const tabs = [
@@ -72,6 +120,34 @@ export function VendorDetails() {
 
   function classNames(...classes: string[]) {
     return classes.filter(Boolean).join(' ');
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+          <p className="mt-2 text-gray-600">Loading vendor details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !vendorDetails) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error || 'Vendor not found'}</p>
+          <button
+            onClick={() => navigate('/vendors')}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Vendors
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const renderTabContent = () => {

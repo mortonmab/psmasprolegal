@@ -142,6 +142,7 @@ export type Document = {
   file_url?: string;
   mime_type?: string;
   document_type: 'contract' | 'evidence' | 'correspondence' | 'court_filing' | 'research' | 'other';
+  category: 'cases' | 'contracts' | 'title_deeds' | 'policies' | 'frameworks' | 'correspondences' | 'board_minutes' | 'management_minutes' | 'sops' | 'governance' | 'other';
   status: 'draft' | 'final' | 'archived' | 'deleted';
   uploaded_by: string;
   case_id?: string;

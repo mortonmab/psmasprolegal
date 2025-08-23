@@ -11,6 +11,7 @@ import { ContractExpiryService } from './contractExpiryService';
 import { CalendarService } from './calendarService';
 import { ComplianceService } from './complianceService';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 // Extend Express Request interface
 declare global {
@@ -245,6 +246,302 @@ app.get('/api/scrape/status/:jobId', (req, res) => {
   }
   
   res.json(status);
+});
+
+// ===== SCRAPING SOURCES API ENDPOINTS =====
+
+// Get all scraping sources
+app.get('/api/scraping-sources', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraping_sources ORDER BY created_at DESC'
+      );
+      res.json(rows);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching scraping sources:', error);
+    res.status(500).json({ error: 'Failed to fetch scraping sources' });
+  }
+});
+
+// Get scraping source by ID
+app.get('/api/scraping-sources/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      if (Array.isArray(rows) && rows.length === 0) {
+        res.status(404).json({ error: 'Scraping source not found' });
+        return;
+      }
+      
+      res.json(rows[0]);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching scraping source:', error);
+    res.status(500).json({ error: 'Failed to fetch scraping source' });
+  }
+});
+
+// Create new scraping source
+app.post('/api/scraping-sources', async (req, res) => {
+  try {
+    const { name, url, source_type, selectors } = req.body;
+    
+    if (!name || !url || !source_type) {
+      res.status(400).json({ error: 'Name, URL, and source_type are required' });
+      return;
+    }
+    
+    const id = crypto.randomUUID();
+    const connection = await pool.getConnection();
+    try {
+      await connection.execute(
+        'INSERT INTO scraping_sources (id, name, url, source_type, selectors) VALUES (?, ?, ?, ?, ?)',
+        [id, name, url, source_type, JSON.stringify(selectors || {})]
+      );
+      
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      res.status(201).json(rows[0]);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error creating scraping source:', error);
+    res.status(500).json({ error: 'Failed to create scraping source' });
+  }
+});
+
+// Update scraping source
+app.put('/api/scraping-sources/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, url, source_type, is_active, selectors } = req.body;
+    
+    console.log('Updating scraping source:', { id, name, url, source_type, is_active, selectors });
+    
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      if (Array.isArray(rows) && rows.length === 0) {
+        res.status(404).json({ error: 'Scraping source not found' });
+        return;
+      }
+      
+      // Build dynamic update query based on provided fields
+      const updateFields = [];
+      const updateValues = [];
+      
+      if (name !== undefined) {
+        updateFields.push('name = ?');
+        updateValues.push(name);
+      }
+      if (url !== undefined) {
+        updateFields.push('url = ?');
+        updateValues.push(url);
+      }
+      if (source_type !== undefined) {
+        updateFields.push('source_type = ?');
+        updateValues.push(source_type);
+      }
+      if (is_active !== undefined) {
+        updateFields.push('is_active = ?');
+        updateValues.push(is_active);
+      }
+      if (selectors !== undefined) {
+        updateFields.push('selectors = ?');
+        updateValues.push(JSON.stringify(selectors));
+      }
+      
+      updateFields.push('updated_at = CURRENT_TIMESTAMP');
+      updateValues.push(id);
+      
+      const updateQuery = `UPDATE scraping_sources SET ${updateFields.join(', ')} WHERE id = ?`;
+      console.log('Update query:', updateQuery, updateValues);
+      
+      await connection.execute(updateQuery, updateValues);
+      
+      const [updatedRows] = await connection.execute(
+        'SELECT * FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      res.json(updatedRows[0]);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error updating scraping source:', error);
+    res.status(500).json({ error: 'Failed to update scraping source' });
+  }
+});
+
+// Delete scraping source
+app.delete('/api/scraping-sources/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      if (Array.isArray(rows) && rows.length === 0) {
+        res.status(404).json({ error: 'Scraping source not found' });
+        return;
+      }
+      
+      await connection.execute(
+        'DELETE FROM scraping_sources WHERE id = ?',
+        [id]
+      );
+      
+      res.status(204).send();
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error deleting scraping source:', error);
+    res.status(500).json({ error: 'Failed to delete scraping source' });
+  }
+});
+
+// ===== SCRAPED DATA API ENDPOINTS =====
+
+// Get scraped data with search and filtering
+app.get('/api/scraped-data', async (req, res) => {
+  try {
+    const { 
+      search, 
+      source_type, 
+      jurisdiction, 
+      page = 1, 
+      limit = 20,
+      sort_by = 'scraped_at',
+      sort_order = 'desc'
+    } = req.query;
+    
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    
+    if (search) {
+      whereClause += ' AND (title LIKE ? OR content LIKE ? OR keywords LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    if (source_type) {
+      whereClause += ' AND source_type = ?';
+      params.push(source_type);
+    }
+    
+    if (jurisdiction) {
+      whereClause += ' AND jurisdiction = ?';
+      params.push(jurisdiction);
+    }
+    
+    const connection = await pool.getConnection();
+    try {
+      // Get total count
+      const [countRows] = await connection.execute(
+        `SELECT COUNT(*) as total FROM scraped_data ${whereClause}`,
+        params
+      );
+      const total = (countRows as any)[0].total;
+      
+      // Get paginated results
+      const [rows] = await connection.execute(
+        `SELECT * FROM scraped_data ${whereClause} ORDER BY ${sort_by} ${sort_order} LIMIT ? OFFSET ?`,
+        [...params, parseInt(limit as string), offset]
+      );
+      
+      res.json({
+        data: rows,
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total,
+          pages: Math.ceil(total / parseInt(limit as string))
+        }
+      });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching scraped data:', error);
+    res.status(500).json({ error: 'Failed to fetch scraped data' });
+  }
+});
+
+// Get scraped data by ID
+app.get('/api/scraped-data/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM scraped_data WHERE id = ?',
+        [id]
+      );
+      
+      if (Array.isArray(rows) && rows.length === 0) {
+        res.status(404).json({ error: 'Scraped data not found' });
+        return;
+      }
+      
+      res.json(rows[0]);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching scraped data:', error);
+    res.status(500).json({ error: 'Failed to fetch scraped data' });
+  }
+});
+
+// Get scraped data statistics
+app.get('/api/scraped-data/stats', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    try {
+      const [totalRows] = await connection.execute('SELECT COUNT(*) as total FROM scraped_data');
+      const [typeRows] = await connection.execute('SELECT source_type, COUNT(*) as count FROM scraped_data GROUP BY source_type');
+      const [recentRows] = await connection.execute('SELECT COUNT(*) as recent FROM scraped_data WHERE scraped_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)');
+      
+      res.json({
+        total: (totalRows as any)[0].total,
+        byType: typeRows,
+        recent: (recentRows as any)[0].recent
+      });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching scraped data stats:', error);
+    res.status(500).json({ error: 'Failed to fetch scraped data statistics' });
+  }
 });
 
 // ===== USERS API ENDPOINTS =====
@@ -1893,6 +2190,7 @@ app.post('/api/documents', async (req, res) => {
       file_url, 
       mime_type, 
       document_type, 
+      category,
       uploaded_by, 
       case_id, 
       contract_id 
@@ -1904,11 +2202,12 @@ app.post('/api/documents', async (req, res) => {
     const mimeTypeValue = mime_type || null;
     const caseIdValue = case_id || null;
     const contractIdValue = contract_id || null;
+    const categoryValue = category || 'other';
     
     const connection = await pool.getConnection();
     await connection.execute(
-      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, uploaded_by, case_id, contract_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, file_name, file_type, file_size, file_path, fileUrlValue, mimeTypeValue, document_type, uploaded_by, caseIdValue, contractIdValue, 'draft']
+      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, category, uploaded_by, case_id, contract_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, file_name, file_type, file_size, file_path, fileUrlValue, mimeTypeValue, document_type, categoryValue, uploaded_by, caseIdValue, contractIdValue, 'draft']
     );
     
     const [rows] = await connection.execute(
@@ -1945,9 +2244,9 @@ app.get('/api/cases/:caseId/documents', async (req, res) => {
 app.post('/api/cases/:caseId/documents/upload', upload.single('file'), async (req, res) => {
   try {
     const { caseId } = req.params;
-    const { title, document_type, uploaded_by } = req.body;
+    const { title, document_type, category, uploaded_by } = req.body;
     
-    console.log('Upload request received:', { caseId, title, document_type, uploaded_by });
+    console.log('Upload request received:', { caseId, title, document_type, category, uploaded_by });
     console.log('File info:', req.file);
     
     if (!req.file) {
@@ -1961,16 +2260,17 @@ app.post('/api/cases/:caseId/documents/upload', upload.single('file'), async (re
     const id = generateUUID();
     const file_path = req.file.path;
     const file_url = `/uploads/${req.file.filename}`;
+    const categoryValue = category || 'cases'; // Default to 'cases' for case documents
     
     console.log('Inserting document with data:', {
       id, title, file_name: req.file.originalname, file_type: req.file.mimetype, 
-      file_size: req.file.size, file_path, file_url, document_type, uploaded_by, caseId
+      file_size: req.file.size, file_path, file_url, document_type, category: categoryValue, uploaded_by, caseId
     });
     
     const connection = await pool.getConnection();
     await connection.execute(
-      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, uploaded_by, case_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, req.file.originalname, req.file.mimetype, req.file.size, file_path, file_url, req.file.mimetype, document_type, uploaded_by, caseId, 'draft']
+      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, category, uploaded_by, case_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, req.file.originalname, req.file.mimetype, req.file.size, file_path, file_url, req.file.mimetype, document_type, categoryValue, uploaded_by, caseId, 'draft']
     );
     
     const [rows] = await connection.execute(
@@ -2008,9 +2308,9 @@ app.get('/api/contracts/:contractId/documents', async (req, res) => {
 app.post('/api/contracts/:contractId/documents/upload', upload.single('file'), async (req, res) => {
   try {
     const { contractId } = req.params;
-    const { title, document_type, uploaded_by } = req.body;
+    const { title, document_type, category, uploaded_by } = req.body;
     
-    console.log('Contract document upload request received:', { contractId, title, document_type, uploaded_by });
+    console.log('Contract document upload request received:', { contractId, title, document_type, category, uploaded_by });
     console.log('File info:', req.file);
     
     if (!req.file) {
@@ -2024,16 +2324,17 @@ app.post('/api/contracts/:contractId/documents/upload', upload.single('file'), a
     const id = generateUUID();
     const file_path = req.file.path;
     const file_url = `/uploads/${req.file.filename}`;
+    const categoryValue = category || 'contracts'; // Default to 'contracts' for contract documents
     
     console.log('Inserting contract document with data:', {
       id, title, file_name: req.file.originalname, file_type: req.file.mimetype, 
-      file_size: req.file.size, file_path, file_url, document_type, uploaded_by, contractId
+      file_size: req.file.size, file_path, file_url, document_type, category: categoryValue, uploaded_by, contractId
     });
     
     const connection = await pool.getConnection();
     await connection.execute(
-      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, uploaded_by, contract_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, req.file.originalname, req.file.mimetype, req.file.size, file_path, file_url, req.file.mimetype, document_type, uploaded_by, contractId, 'draft']
+      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, category, uploaded_by, contract_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, req.file.originalname, req.file.mimetype, req.file.size, file_path, file_url, req.file.mimetype, document_type, categoryValue, uploaded_by, contractId, 'draft']
     );
     
     const [rows] = await connection.execute(
@@ -2047,6 +2348,51 @@ app.post('/api/contracts/:contractId/documents/upload', upload.single('file'), a
   } catch (error) {
     console.error('Error uploading contract document:', error);
     res.status(500).json({ error: 'Failed to upload contract document', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// Upload general document with category
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+  try {
+    const { title, document_type, category, uploaded_by } = req.body;
+    
+    console.log('General document upload request received:', { title, document_type, category, uploaded_by });
+    console.log('File info:', req.file);
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    if (!title || !document_type || !category || !uploaded_by) {
+      return res.status(400).json({ error: 'Missing required fields: title, document_type, category, or uploaded_by' });
+    }
+    
+    const id = generateUUID();
+    const file_path = req.file.path;
+    const file_url = `/uploads/${req.file.filename}`;
+    
+    console.log('Inserting general document with data:', {
+      id, title, file_name: req.file.originalname, file_type: req.file.mimetype, 
+      file_size: req.file.size, file_path, file_url, document_type, category, uploaded_by
+    });
+    
+    const connection = await pool.getConnection();
+    await connection.execute(
+      'INSERT INTO documents (id, title, file_name, file_type, file_size, file_path, file_url, mime_type, document_type, category, uploaded_by, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, req.file.originalname, req.file.mimetype, req.file.size, file_path, file_url, req.file.mimetype, document_type, category, uploaded_by, 'draft']
+    );
+    
+    const [rows] = await connection.execute(
+      'SELECT d.*, u.full_name as uploaded_by_name FROM documents d JOIN users u ON d.uploaded_by = u.id WHERE d.id = ?',
+      [id]
+    );
+    connection.release();
+    
+    console.log('General document uploaded successfully:', (rows as any[])[0]);
+    res.status(201).json((rows as any[])[0]);
+  } catch (error) {
+    console.error('Error uploading general document:', error);
+    res.status(500).json({ error: 'Failed to upload general document', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
@@ -2781,6 +3127,153 @@ app.post('/api/compliance/survey/:token/submit', async (req, res) => {
   }
 });
 
+// Get survey responses for a compliance run
+app.get('/api/compliance/runs/:runId/responses', authenticateToken, async (req, res) => {
+  try {
+    const { runId } = req.params;
+    const responses = await ComplianceService.getSurveyResponses(runId);
+    res.json({ success: true, data: responses });
+  } catch (error) {
+    console.error('Error getting survey responses:', error);
+    res.status(500).json({ error: 'Failed to get survey responses' });
+  }
+});
+
+// Generate survey report
+app.get('/api/compliance/runs/:runId/report', authenticateToken, async (req, res) => {
+  try {
+    const { runId } = req.params;
+    const report = await ComplianceService.generateSurveyReport(runId);
+    res.json({ success: true, data: report });
+  } catch (error) {
+    console.error('Error generating survey report:', error);
+    res.status(500).json({ error: 'Failed to generate survey report' });
+  }
+});
+
+// Process recurring compliance surveys
+app.post('/api/compliance/process-recurring', authenticateToken, async (req, res) => {
+  try {
+    const { RecurringComplianceService } = await import('./recurringComplianceService');
+    await RecurringComplianceService.processRecurringSurveys();
+    res.json({ success: true, message: 'Recurring surveys processed successfully' });
+  } catch (error) {
+    console.error('Error processing recurring surveys:', error);
+    res.status(500).json({ error: 'Failed to process recurring surveys' });
+  }
+});
+
+// Send survey report via email
+app.post('/api/compliance/runs/:runId/share-report', authenticateToken, async (req, res) => {
+  try {
+    const { runId } = req.params;
+    const { email, message } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const report = await ComplianceService.generateSurveyReport(runId);
+    
+    // Generate HTML report
+    const htmlReport = generateHtmlReport(report);
+    
+    // Send email with report using nodemailer directly
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransporter({
+      host: process.env.SMTP_HOST || 'soxfort.com',
+      port: parseInt(process.env.SMTP_PORT || '465'),
+      secure: true,
+      auth: {
+        user: process.env.SMTP_USER || 'no_reply@soxfort.com',
+        pass: process.env.SMTP_PASS || '@Soxfort2000'
+      }
+    });
+
+    await transporter.sendMail({
+      from: process.env.SMTP_USER || 'no_reply@soxfort.com',
+      to: email,
+      subject: `Compliance Survey Report: ${report.run.title}`,
+      html: `
+        <h2>Compliance Survey Report</h2>
+        <p><strong>Survey:</strong> ${report.run.title}</p>
+        <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Completion Rate:</strong> ${report.statistics.completionRate}%</p>
+        <p><strong>Total Responses:</strong> ${report.statistics.totalResponses}/${report.statistics.totalRecipients}</p>
+        ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+        <hr>
+        ${htmlReport}
+      `
+    });
+
+    res.json({ success: true, message: 'Report sent successfully' });
+  } catch (error) {
+    console.error('Error sharing survey report:', error);
+    res.status(500).json({ error: 'Failed to share survey report' });
+  }
+});
+
+// Helper function to generate HTML report
+function generateHtmlReport(report: any): string {
+  let html = `
+    <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+      <h1 style="color: #2563eb;">${report.run.title}</h1>
+      <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <h2 style="color: #374151;">Survey Statistics</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: bold; color: #059669;">${report.statistics.completionRate}%</div>
+            <div style="color: #6b7280;">Completion Rate</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: bold; color: #2563eb;">${report.statistics.totalResponses}</div>
+            <div style="color: #6b7280;">Total Responses</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${report.statistics.totalRecipients - report.statistics.totalResponses}</div>
+            <div style="color: #6b7280;">Pending</div>
+          </div>
+          ${report.statistics.averageScore > 0 ? `
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: bold; color: #7c3aed;">${report.statistics.averageScore}</div>
+            <div style="color: #6b7280;">Average Score</div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+  `;
+
+  // Add individual responses
+  if (report.responses.length > 0) {
+    html += `<h2 style="color: #374151; margin-top: 30px;">Individual Responses</h2>`;
+    
+    report.responses.forEach((userResponse: any, index: number) => {
+      html += `
+        <div style="border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0; padding: 20px;">
+          <h3 style="color: #1f2937; margin-bottom: 10px;">${userResponse.userName}</h3>
+          <p style="color: #6b7280; margin-bottom: 15px;">${userResponse.departmentName} • ${userResponse.userEmail}</p>
+          <p style="color: #6b7280; font-size: 14px;">Submitted: ${new Date(userResponse.submittedAt).toLocaleDateString()}</p>
+      `;
+
+      userResponse.responses.forEach((response: any) => {
+        html += `
+          <div style="margin: 15px 0; padding: 15px; background: #f9fafb; border-radius: 6px;">
+            <p style="font-weight: bold; color: #374151; margin-bottom: 8px;">${response.questionText}</p>
+            <p style="color: #6b7280; margin-bottom: 5px;"><strong>Answer:</strong> ${response.answer || 'No answer provided'}</p>
+            ${response.score !== null ? `<p style="color: #6b7280; margin-bottom: 5px;"><strong>Score:</strong> ${response.score}</p>` : ''}
+            ${response.comment ? `<p style="color: #6b7280;"><strong>Comment:</strong> ${response.comment}</p>` : ''}
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    });
+  }
+
+  html += `</div>`;
+  return html;
+}
+
 // ChatPDF API endpoints
 const CHATPDF_API_KEY = process.env.CHATPDF_API_KEY;
 const CHATPDF_BASE_URL = 'https://api.chatpdf.com/v1';
@@ -2959,6 +3452,422 @@ app.delete('/api/chatpdf/sources', authenticateToken, async (req, res) => {
   }
 });
 
+// General Compliance API endpoints
+
+// Create a new compliance record
+app.post('/api/general-compliance', authenticateToken, async (req, res) => {
+  try {
+    const { name, description, complianceType, dueDate, dueDay, expiryDate, renewalDate, frequency, status, priority, assignedTo, departmentId } = req.body;
+    const userId = req.user.userId;
+
+    if (!name || !complianceType || !frequency) {
+      return res.status(400).json({ error: 'Missing required fields: name, complianceType, frequency' });
+    }
+
+    // Validate date fields based on frequency
+    if (['once', 'annually', 'biennially'].includes(frequency) && !dueDate) {
+      return res.status(400).json({ error: 'Due date is required for one-time, annual, and biennial compliance items' });
+    }
+
+    if (['monthly', 'quarterly'].includes(frequency) && !dueDay) {
+      return res.status(400).json({ error: 'Due day is required for monthly and quarterly compliance items' });
+    }
+
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    const complianceRecord = await GeneralComplianceService.createComplianceRecord({
+      name,
+      description,
+      complianceType,
+      dueDate,
+      dueDay,
+      expiryDate,
+      renewalDate,
+      frequency,
+      status,
+      priority,
+      assignedTo,
+      departmentId,
+      createdBy: userId
+    });
+
+    res.status(201).json({ success: true, data: complianceRecord });
+  } catch (error) {
+    console.error('Error creating compliance record:', error);
+    res.status(500).json({ error: 'Failed to create compliance record' });
+  }
+});
+
+// Get all compliance records with optional filtering
+app.get('/api/general-compliance', authenticateToken, async (req, res) => {
+  try {
+    const { status, priority, complianceType, assignedTo, departmentId, dueDateFrom, dueDateTo } = req.query;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    
+    const filters: any = {};
+    if (status) filters.status = status as string;
+    if (priority) filters.priority = priority as string;
+    if (complianceType) filters.complianceType = complianceType as string;
+    if (assignedTo) filters.assignedTo = assignedTo as string;
+    if (departmentId) filters.departmentId = departmentId as string;
+    if (dueDateFrom) filters.dueDateFrom = dueDateFrom as string;
+    if (dueDateTo) filters.dueDateTo = dueDateTo as string;
+
+    const records = await GeneralComplianceService.getComplianceRecords(filters);
+    res.json({ success: true, data: records });
+  } catch (error) {
+    console.error('Error getting compliance records:', error);
+    res.status(500).json({ error: 'Failed to get compliance records' });
+  }
+});
+
+// Get a single compliance record by ID
+app.get('/api/general-compliance/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    
+    const record = await GeneralComplianceService.getComplianceRecordById(id);
+    
+    if (!record) {
+      return res.status(404).json({ error: 'Compliance record not found' });
+    }
+
+    res.json({ success: true, data: record });
+  } catch (error) {
+    console.error('Error getting compliance record:', error);
+    res.status(500).json({ error: 'Failed to get compliance record' });
+  }
+});
+
+// Update a compliance record
+app.put('/api/general-compliance/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, complianceType, dueDate, dueDay, expiryDate, renewalDate, frequency, status, priority, assignedTo, departmentId } = req.body;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    
+    const updatedRecord = await GeneralComplianceService.updateComplianceRecord(id, {
+      name,
+      description,
+      complianceType,
+      dueDate,
+      dueDay,
+      expiryDate,
+      renewalDate,
+      frequency,
+      status,
+      priority,
+      assignedTo,
+      departmentId
+    });
+
+    res.json({ success: true, data: updatedRecord });
+  } catch (error) {
+    console.error('Error updating compliance record:', error);
+    res.status(500).json({ error: 'Failed to update compliance record' });
+  }
+});
+
+// Delete a compliance record
+app.delete('/api/general-compliance/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    
+    const deleted = await GeneralComplianceService.deleteComplianceRecord(id);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'Compliance record not found' });
+    }
+
+    res.json({ success: true, message: 'Compliance record deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting compliance record:', error);
+    res.status(500).json({ error: 'Failed to delete compliance record' });
+  }
+});
+
+// Get overdue compliance records
+app.get('/api/general-compliance/overdue', authenticateToken, async (req, res) => {
+  try {
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    const records = await GeneralComplianceService.getOverdueRecords();
+    res.json({ success: true, data: records });
+  } catch (error) {
+    console.error('Error getting overdue records:', error);
+    res.status(500).json({ error: 'Failed to get overdue records' });
+  }
+});
+
+// Get upcoming due records
+app.get('/api/general-compliance/upcoming', authenticateToken, async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    const records = await GeneralComplianceService.getUpcomingDueRecords(Number(days));
+    res.json({ success: true, data: records });
+  } catch (error) {
+    console.error('Error getting upcoming records:', error);
+    res.status(500).json({ error: 'Failed to get upcoming records' });
+  }
+});
+
+// External Users API endpoints
+app.post('/api/external-users', authenticateToken, async (req, res) => {
+  try {
+    const { name, email, phone, organization } = req.body;
+    const { ExternalUserService } = await import('./externalUserService');
+    
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    const externalUser = await ExternalUserService.createExternalUser({
+      name,
+      email,
+      phone,
+      organization
+    });
+
+    res.status(201).json({ success: true, data: externalUser });
+  } catch (error) {
+    console.error('Error creating external user:', error);
+    res.status(500).json({ error: 'Failed to create external user' });
+  }
+});
+
+app.get('/api/external-users', authenticateToken, async (req, res) => {
+  try {
+    const { ExternalUserService } = await import('./externalUserService');
+    const users = await ExternalUserService.getExternalUsers();
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error('Error getting external users:', error);
+    res.status(500).json({ error: 'Failed to get external users' });
+  }
+});
+
+// Compliance Reminder Recipients API endpoints
+app.post('/api/compliance-records/:id/recipients', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, externalUserId, email, name, role } = req.body;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Email and name are required' });
+    }
+
+    const recipient = await ComplianceReminderService.addRecipient({
+      complianceRecordId: id,
+      userId,
+      externalUserId,
+      email,
+      name,
+      role
+    });
+
+    res.status(201).json({ success: true, data: recipient });
+  } catch (error) {
+    console.error('Error adding recipient:', error);
+    res.status(500).json({ error: 'Failed to add recipient' });
+  }
+});
+
+app.get('/api/compliance-records/:id/recipients', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    const recipients = await ComplianceReminderService.getRecipients(id);
+    res.json({ success: true, data: recipients });
+  } catch (error) {
+    console.error('Error getting recipients:', error);
+    res.status(500).json({ error: 'Failed to get recipients' });
+  }
+});
+
+app.delete('/api/compliance-records/recipients/:recipientId', authenticateToken, async (req, res) => {
+  try {
+    const { recipientId } = req.params;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    const deleted = await ComplianceReminderService.removeRecipient(recipientId);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'Recipient not found' });
+    }
+
+    res.json({ success: true, message: 'Recipient removed successfully' });
+  } catch (error) {
+    console.error('Error removing recipient:', error);
+    res.status(500).json({ error: 'Failed to remove recipient' });
+  }
+});
+
+// Schedule reminders for a compliance record
+app.post('/api/compliance-records/:id/schedule-reminders', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    await ComplianceReminderService.scheduleReminders(id);
+    res.json({ success: true, message: 'Reminders scheduled successfully' });
+  } catch (error) {
+    console.error('Error scheduling reminders:', error);
+    res.status(500).json({ error: 'Failed to schedule reminders' });
+  }
+});
+
+// Compliance confirmation endpoint (public - no authentication required)
+app.post('/api/compliance-confirm/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { confirmedBy, confirmedEmail, confirmationType, notes } = req.body;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    if (!confirmedBy || !confirmedEmail || !confirmationType) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const confirmed = await ComplianceReminderService.confirmCompliance(token, {
+      confirmedBy,
+      confirmedEmail,
+      confirmationType,
+      notes
+    });
+
+    if (confirmed) {
+      res.json({ success: true, message: 'Compliance confirmed successfully' });
+    } else {
+      res.status(400).json({ error: 'Failed to confirm compliance' });
+    }
+  } catch (error) {
+    console.error('Error confirming compliance:', error);
+    res.status(500).json({ error: 'Failed to confirm compliance' });
+  }
+});
+
+// Get confirmation details by token (public - no authentication required)
+app.get('/api/compliance-confirm/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { ComplianceReminderService } = await import('./complianceReminderService');
+    
+    const confirmation = await ComplianceReminderService.getConfirmationByToken(token);
+    
+    if (!confirmation) {
+      return res.status(404).json({ error: 'Invalid or expired confirmation token' });
+    }
+
+    res.json({ success: true, data: confirmation });
+  } catch (error) {
+    console.error('Error getting confirmation details:', error);
+    res.status(500).json({ error: 'Failed to get confirmation details' });
+  }
+});
+
+// Manual trigger for reminder job (for testing)
+app.post('/api/compliance-reminders/send', authenticateToken, async (req, res) => {
+  try {
+    const { ComplianceReminderJob } = await import('./complianceReminderJob');
+    await ComplianceReminderJob.run();
+    res.json({ success: true, message: 'Reminder emails sent successfully' });
+  } catch (error) {
+    console.error('Error sending reminder emails:', error);
+    res.status(500).json({ error: 'Failed to send reminder emails' });
+  }
+});
+
+// Test endpoint without authentication (for development only)
+app.post('/api/test/general-compliance', async (req, res) => {
+  try {
+    const { name, description, complianceType, dueDate, dueDay, expiryDate, renewalDate, frequency, status, priority, assignedTo, departmentId } = req.body;
+    
+    if (!name || !complianceType || !frequency) {
+      return res.status(400).json({ error: 'Missing required fields: name, complianceType, frequency' });
+    }
+
+    // Validate date fields based on frequency
+    if (['once', 'annually', 'biennially'].includes(frequency) && !dueDate) {
+      return res.status(400).json({ error: 'Due date is required for one-time, annual, and biennial compliance items' });
+    }
+
+    if (['monthly', 'quarterly'].includes(frequency) && !dueDay) {
+      return res.status(400).json({ error: 'Due day is required for monthly and quarterly compliance items' });
+    }
+
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    const complianceRecord = await GeneralComplianceService.createComplianceRecord({
+      name,
+      description,
+      complianceType,
+      dueDate,
+      dueDay,
+      expiryDate,
+      renewalDate,
+      frequency,
+      status,
+      priority,
+      assignedTo,
+      departmentId,
+      createdBy: '6863bcc8-6851-44ce-abaf-15f8429e6956' // Use existing user ID for testing
+    });
+
+    res.status(201).json({ success: true, data: complianceRecord });
+  } catch (error) {
+    console.error('Error creating compliance record:', error);
+    res.status(500).json({ error: 'Failed to create compliance record' });
+  }
+});
+
+app.get('/api/test/general-compliance', async (req, res) => {
+  try {
+    const { status, priority, complianceType, assignedTo, departmentId, dueDateFrom, dueDateTo } = req.query;
+    const { GeneralComplianceService } = await import('./generalComplianceService');
+    
+    const filters: any = {};
+    if (status) filters.status = status as string;
+    if (priority) filters.priority = priority as string;
+    if (complianceType) filters.complianceType = complianceType as string;
+    if (assignedTo) filters.assignedTo = assignedTo as string;
+    if (departmentId) filters.departmentId = departmentId as string;
+    if (dueDateFrom) filters.dueDateFrom = dueDateFrom as string;
+    if (dueDateTo) filters.dueDateTo = dueDateTo as string;
+
+    const records = await GeneralComplianceService.getComplianceRecords(filters);
+    res.json({ success: true, data: records });
+  } catch (error) {
+    console.error('Error getting compliance records:', error);
+    res.status(500).json({ error: 'Failed to get compliance records' });
+  }
+});
+
+// Function to start recurring survey scheduler
+async function startRecurringSurveyScheduler() {
+  console.log('🕐 Starting recurring survey scheduler...');
+  
+  // Process recurring surveys every hour
+  setInterval(async () => {
+    try {
+      const { RecurringComplianceService } = await import('./recurringComplianceService');
+      await RecurringComplianceService.processRecurringSurveys();
+    } catch (error) {
+      console.error('Error in recurring survey scheduler:', error);
+    }
+  }, 60 * 60 * 1000); // Run every hour
+  
+  // Also run once on startup
+  setTimeout(async () => {
+    try {
+      const { RecurringComplianceService } = await import('./recurringComplianceService');
+      await RecurringComplianceService.processRecurringSurveys();
+    } catch (error) {
+      console.error('Error in initial recurring survey check:', error);
+    }
+  }, 5000); // Wait 5 seconds after startup
+}
+
 // Initialize database and start server
 async function startServer() {
   try {
@@ -2980,6 +3889,9 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Database: MySQL (${process.env.DB_NAME || 'prolegal_db'})`);
+      
+      // Start recurring survey scheduler
+      startRecurringSurveyScheduler();
     });
   } catch (error) {
     console.error('Failed to start server:', error);

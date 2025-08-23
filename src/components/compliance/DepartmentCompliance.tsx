@@ -34,7 +34,12 @@ interface ComplianceRun {
 
 
 
-export function DepartmentCompliance() {
+interface DepartmentComplianceProps {
+  searchQuery?: string;
+  selectedDepartment?: string | 'all';
+}
+
+export function DepartmentCompliance({ searchQuery = '', selectedDepartment = 'all' }: DepartmentComplianceProps) {
   const [showNewRunModal, setShowNewRunModal] = useState(false);
   const [showSurveyModal, setShowSurveyModal] = useState(false);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
@@ -44,6 +49,18 @@ export function DepartmentCompliance() {
   const { toast } = useToast();
 
   const [departments, setDepartments] = useState<Department[]>([]);
+
+  // Filter compliance runs based on search query and selected department
+  const filteredRuns = complianceRuns.filter(run => {
+    const matchesSearch = !searchQuery || 
+      run.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      run.description.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesDepartment = !selectedDepartment || selectedDepartment === 'all' || 
+      run.departmentIds?.includes(selectedDepartment);
+    
+    return matchesSearch && matchesDepartment;
+  });
 
   // Safe date formatting function
   const formatDate = (dateString: string | Date | null | undefined): string => {
@@ -65,6 +82,12 @@ export function DepartmentCompliance() {
     loadDepartments();
   }, []);
 
+  // Reload data when filters change (optional - for real-time filtering)
+  useEffect(() => {
+    // If you want to reload from server when filters change, uncomment this
+    // loadComplianceRuns();
+  }, [searchQuery, selectedDepartment]);
+
   const loadComplianceRuns = async () => {
     try {
       setLoading(true);
@@ -72,11 +95,16 @@ export function DepartmentCompliance() {
       setComplianceRuns(runs);
     } catch (error) {
       console.error('Error loading compliance runs:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load compliance runs',
-        variant: 'destructive'
-      });
+      // Set empty array instead of showing error for now
+      setComplianceRuns([]);
+      // Only show error toast if it's not an authentication issue
+      if (error instanceof Error && !error.message.includes('Access token')) {
+        toast({
+          title: 'Error',
+          description: 'Failed to load compliance runs',
+          variant: 'destructive'
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -216,7 +244,8 @@ export function DepartmentCompliance() {
         ...data,
         departmentIds: data.departments, // Convert departments to departmentIds
         startDate: data.startDate,
-        dueDate: data.dueDate
+        dueDate: data.dueDate,
+        recurringDay: data.recurringDay || undefined
       };
       
       await ComplianceService.createComplianceRun(apiData);
@@ -253,16 +282,23 @@ export function DepartmentCompliance() {
             <div className="h-4 bg-gray-200 rounded w-1/2"></div>
           </div>
         </div>
-      ) : complianceRuns.length === 0 ? (
+      ) : filteredRuns.length === 0 ? (
         <div className="bg-white shadow rounded-md p-6 text-center">
           <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No compliance surveys yet</h3>
-          <p className="text-gray-500 mb-4">Create your first compliance survey to get started.</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {complianceRuns.length === 0 ? 'No compliance surveys yet' : 'No surveys match your filters'}
+          </h3>
+          <p className="text-gray-500 mb-4">
+            {complianceRuns.length === 0 
+              ? 'Create your first compliance survey to get started.'
+              : 'Try adjusting your search or department filter.'
+            }
+          </p>
         </div>
       ) : (
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <ul className="divide-y divide-gray-200">
-            {complianceRuns.map((run) => (
+            {filteredRuns.map((run) => (
               <li key={run.id}>
                 <div 
                   className="px-4 py-4 sm:px-6 hover:bg-gray-50 cursor-pointer transition-colors duration-200"
@@ -306,6 +342,19 @@ export function DepartmentCompliance() {
                           Activate
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSurveyId(run.id);
+                          setShowSurveyModal(true);
+                        }}
+                        className="ml-2"
+                      >
+                        <Eye className="h-4 w-4" />
+                        View
+                      </Button>
                     </div>
                   </div>
                   <div className="mt-2 sm:flex sm:justify-between">

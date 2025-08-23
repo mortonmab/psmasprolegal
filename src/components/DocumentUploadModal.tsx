@@ -20,6 +20,7 @@ export function DocumentUploadModal({ isOpen, onClose, onUploadSuccess, caseId }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [documentType, setDocumentType] = useState<Document['document_type']>('evidence');
+  const [category, setCategory] = useState<Document['category']>('cases');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,12 +78,14 @@ export function DocumentUploadModal({ isOpen, onClose, onUploadSuccess, caseId }
         selectedFile,
         title.trim(),
         documentType,
+        category,
         user.id
       );
       
       // Reset form
       setTitle('');
       setDocumentType('evidence');
+      setCategory('cases');
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -102,6 +105,7 @@ export function DocumentUploadModal({ isOpen, onClose, onUploadSuccess, caseId }
     if (!isUploading) {
       setTitle('');
       setDocumentType('evidence');
+      setCategory('cases');
       setSelectedFile(null);
       setError(null);
       if (fileInputRef.current) {
@@ -189,6 +193,29 @@ export function DocumentUploadModal({ isOpen, onClose, onUploadSuccess, caseId }
                 <SelectItem value="court_filing">Court Filing</SelectItem>
                 <SelectItem value="research">Research</SelectItem>
                 <SelectItem value="contract">Contract</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Category */}
+          <div className="space-y-2">
+            <Label htmlFor="category">Category</Label>
+            <Select value={category} onValueChange={(value: Document['category']) => setCategory(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cases">Cases</SelectItem>
+                <SelectItem value="contracts">Contracts</SelectItem>
+                <SelectItem value="title_deeds">Title Deeds</SelectItem>
+                <SelectItem value="policies">Policies</SelectItem>
+                <SelectItem value="frameworks">Frameworks</SelectItem>
+                <SelectItem value="correspondences">Correspondences</SelectItem>
+                <SelectItem value="board_minutes">Board Minutes and Terms of References</SelectItem>
+                <SelectItem value="management_minutes">Management Minutes</SelectItem>
+                <SelectItem value="sops">SOPS</SelectItem>
+                <SelectItem value="governance">Governance Documents</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>

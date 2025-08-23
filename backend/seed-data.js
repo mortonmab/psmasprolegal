@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -10,6 +11,13 @@ function generateUUID() {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+// Helper function to hash passwords properly
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
 }
 
 const dbConfig = {
@@ -31,7 +39,7 @@ async function seedDatabase() {
       {
         id: generateUUID(),
         email: 'admin@prolegal.com',
-        password_hash: '$2b$10$dummy.hash.for.testing',
+        password_hash: hashPassword('admin123'),
         full_name: 'Admin User',
         role: 'admin',
         phone: '+1234567890'
@@ -39,7 +47,7 @@ async function seedDatabase() {
       {
         id: generateUUID(),
         email: 'attorney@prolegal.com',
-        password_hash: '$2b$10$dummy.hash.for.testing',
+        password_hash: hashPassword('attorney123'),
         full_name: 'John Smith',
         role: 'attorney',
         phone: '+1234567891'
@@ -47,7 +55,7 @@ async function seedDatabase() {
       {
         id: generateUUID(),
         email: 'paralegal@prolegal.com',
-        password_hash: '$2b$10$dummy.hash.for.testing',
+        password_hash: hashPassword('paralegal123'),
         full_name: 'Sarah Johnson',
         role: 'paralegal',
         phone: '+1234567892'
