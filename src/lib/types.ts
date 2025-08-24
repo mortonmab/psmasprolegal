@@ -21,6 +21,7 @@ export type Department = {
   name: string;
   description?: string;
   head_user_id?: string;
+  head_name?: string;
   email?: string;
   phone?: string;
   status: 'active' | 'inactive';

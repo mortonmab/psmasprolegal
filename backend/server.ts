@@ -1847,10 +1847,20 @@ app.get('/api/departments', async (req, res) => {
   try {
     const connection = await pool.getConnection();
     const [rows] = await connection.execute(
-      'SELECT * FROM departments WHERE status = ? ORDER BY name ASC',
+      `SELECT 
+         d.*, 
+         COALESCE(u.full_name, d.description) AS head_name
+       FROM departments d
+       LEFT JOIN users u ON d.head_user_id = u.id
+       WHERE d.status = ?
+       ORDER BY d.name ASC`,
       ['active']
     );
     connection.release();
+    
+    // Debug logging to see what's being returned
+    console.log('Departments API response:', JSON.stringify(rows, null, 2));
+    
     res.json(rows);
   } catch (error) {
     console.error('Error fetching departments:', error);
@@ -1864,20 +1874,25 @@ app.post('/api/departments', async (req, res) => {
     const id = generateUUID();
     
     // Convert undefined values to null for MySQL
-    // Store department head name in description field for now
-    const descriptionValue = head_user_id || null;
-    const headUserIdValue = null; // We'll handle this differently later
+    // head_user_id from frontend is actually the head's name, store it in description
+    const descriptionValue = description || null;
+    const headNameValue = head_user_id || null; // Store head name in description field
     const emailValue = email || null;
     const phoneValue = phone || null;
     
     const connection = await pool.getConnection();
     await connection.execute(
       'INSERT INTO departments (id, name, description, head_user_id, email, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, descriptionValue, headUserIdValue, emailValue, phoneValue, 'active']
+      [id, name, headNameValue, null, emailValue, phoneValue, 'active']
     );
     
     const [rows] = await connection.execute(
-      'SELECT * FROM departments WHERE id = ?',
+      `SELECT 
+         d.*, 
+         COALESCE(u.full_name, d.description) AS head_name
+       FROM departments d
+       LEFT JOIN users u ON d.head_user_id = u.id
+       WHERE d.id = ?`,
       [id]
     );
     connection.release();
@@ -1895,9 +1910,9 @@ app.put('/api/departments/:id', async (req, res) => {
     const { name, description, head_user_id, email, phone, status } = req.body;
     
     // Convert undefined values to null for MySQL
-    // Store department head name in description field for now
-    const descriptionValue = head_user_id || null;
-    const headUserIdValue = null; // We'll handle this differently later
+    // head_user_id from frontend is actually the head's name, store it in description
+    const descriptionValue = description || null;
+    const headNameValue = head_user_id || null; // Store head name in description field
     const emailValue = email || null;
     const phoneValue = phone || null;
     const statusValue = status || 'active';
@@ -1905,11 +1920,16 @@ app.put('/api/departments/:id', async (req, res) => {
     const connection = await pool.getConnection();
     await connection.execute(
       'UPDATE departments SET name = ?, description = ?, head_user_id = ?, email = ?, phone = ?, status = ? WHERE id = ?',
-      [name, descriptionValue, headUserIdValue, emailValue, phoneValue, statusValue, id]
+      [name, headNameValue, null, emailValue, phoneValue, statusValue, id]
     );
     
     const [rows] = await connection.execute(
-      'SELECT * FROM departments WHERE id = ?',
+      `SELECT 
+         d.*, 
+         COALESCE(u.full_name, d.description) AS head_name
+       FROM departments d
+       LEFT JOIN users u ON d.head_user_id = u.id
+       WHERE d.id = ?`,
       [id]
     );
     connection.release();
