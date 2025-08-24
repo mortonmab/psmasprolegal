@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  Upload,
   File,
   AlertTriangle,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NewContractModal } from '../components/NewContractModal';
+import { ContractUploadModal } from '../components/ContractUploadModal';
 import { contractService } from '../services/contractService';
 import type { Contract } from '../lib/types';
 import { contractTypeService, ContractType } from '../services/contractTypeService';
@@ -31,6 +33,7 @@ export function Contracts() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [currentTab, setCurrentTab] = useState<'active' | 'expired'>('active');
   const [isNewContractOpen, setIsNewContractOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractTypes, setContractTypes] = useState<ContractType[]>([]);
@@ -320,10 +323,18 @@ export function Contracts() {
             A list of all contracts including their status, type, and involved parties.
           </p>
         </div>
-        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none flex space-x-3">
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            onClick={() => setIsUploadModalOpen(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Upload
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             onClick={() => setIsNewContractOpen(true)}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -332,11 +343,17 @@ export function Contracts() {
         </div>
       </div>
 
-      {/* Render the modal */}
+      {/* Render the modals */}
       <NewContractModal
         isOpen={isNewContractOpen}
         onClose={() => { setIsNewContractOpen(false); fetchData(); }}
         onContractCreated={(contract) => setContracts(prev => [contract, ...prev])}
+      />
+      
+      <ContractUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUploadSuccess={fetchData}
       />
 
       {/* Quick Stats */}

@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import * as XLSX from 'xlsx';
 import { pool, testConnection, initializeDatabase, generateUUID } from './database';
 import { EmailService } from './emailService';
 import { ContractExpiryService } from './contractExpiryService';
@@ -2275,6 +2276,338 @@ app.put('/api/contracts/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to update contract' });
   }
 });
+
+// Create a separate multer instance for contract uploads that allows Excel and CSV files
+const contractUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit for contract uploads
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow Excel and CSV files for contract uploads
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+      'text/csv', // .csv
+      'application/csv', // alternative CSV MIME type
+      'text/plain', // fallback for CSV files
+      'application/octet-stream' // fallback for binary files
+    ];
+    
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExtension = file.originalname.toLowerCase().substring(file.originalname.lastIndexOf('.'));
+    
+    console.log('File upload attempt:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      extension: fileExtension,
+      size: file.size
+    });
+    
+    if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype}. Please upload Excel (.xlsx, .xls) or CSV files only.`));
+    }
+  }
+});
+
+// Contract bulk upload endpoint
+app.post('/api/contracts/upload', contractUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No file uploaded' 
+      });
+    }
+
+    const file = req.file;
+    const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
+    
+    if (!['xlsx', 'xls', 'csv'].includes(fileExtension || '')) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid file format. Please upload Excel (.xlsx, .xls) or CSV files only.' 
+      });
+    }
+
+    // Parse the file based on its type
+    let contracts = [];
+    
+    if (fileExtension === 'csv') {
+      const csvContent = file.buffer.toString('utf-8');
+      contracts = parseCSV(csvContent);
+    } else if (['xlsx', 'xls'].includes(fileExtension || '')) {
+      contracts = parseExcel(file.buffer);
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.' 
+      });
+    }
+
+    if (contracts.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid contract data found in the file' 
+      });
+    }
+
+    const connection = await pool.getConnection();
+    const results = {
+      total: contracts.length,
+      successful: 0,
+      failed: 0,
+      errors: [] as string[]
+    };
+
+    // Validate and insert contracts
+    for (let i = 0; i < contracts.length; i++) {
+      const contract = contracts[i];
+      const rowNumber = i + 2; // +2 because we skip header row and arrays are 0-indexed
+      
+      try {
+        // Validate required fields
+        if (!contract.title || !contract.vendor_name || 
+            !contract.contract_type || !contract.status || !contract.start_date || 
+            !contract.department_name) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Missing required fields`);
+          continue;
+        }
+
+        // Validate status
+        const validStatuses = ['draft', 'active', 'expired', 'terminated', 'renewed'];
+        if (!validStatuses.includes(contract.status.toLowerCase())) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+          continue;
+        }
+
+        // Validate start date
+        const startDate = parseDate(contract.start_date);
+        if (!startDate) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Invalid start date format. Use DD/MM/YYYY or YYYY-MM-DD`);
+          continue;
+        }
+
+        // Validate end date if provided
+        let endDate = null;
+        if (contract.end_date && contract.end_date.trim()) {
+          endDate = parseDate(contract.end_date);
+          if (!endDate) {
+            results.failed++;
+            results.errors.push(`Row ${rowNumber}: Invalid end date format. Use DD/MM/YYYY or YYYY-MM-DD`);
+            continue;
+          }
+        }
+
+        // Find vendor by name
+        const [vendorRows] = await connection.execute(
+          'SELECT id FROM vendors WHERE name = ?',
+          [contract.vendor_name]
+        );
+        
+        if ((vendorRows as any[]).length === 0) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Vendor "${contract.vendor_name}" not found`);
+          continue;
+        }
+        const vendorId = (vendorRows as any[])[0].id;
+
+        // Find contract type by name
+        const [contractTypeRows] = await connection.execute(
+          'SELECT id FROM contract_types WHERE name = ?',
+          [contract.contract_type]
+        );
+        
+        if ((contractTypeRows as any[]).length === 0) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Contract type "${contract.contract_type}" not found`);
+          continue;
+        }
+        const contractTypeId = (contractTypeRows as any[])[0].id;
+
+        // Find department by name
+        const [departmentRows] = await connection.execute(
+          'SELECT id FROM departments WHERE name = ?',
+          [contract.department_name]
+        );
+        
+        if ((departmentRows as any[]).length === 0) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: Department "${contract.department_name}" not found`);
+          continue;
+        }
+        const departmentId = (departmentRows as any[])[0].id;
+
+        // Generate unique contract number
+        const currentYear = new Date().getFullYear();
+        const [lastContractResult] = await connection.execute(
+          'SELECT contract_number FROM contracts WHERE contract_number LIKE ? ORDER BY contract_number DESC LIMIT 1',
+          [`CON-${currentYear}-%`]
+        );
+        
+        let contractNumber = `CON-${currentYear}-001`;
+        if ((lastContractResult as any[]).length > 0) {
+          const lastNumber = (lastContractResult as any[])[0].contract_number;
+          const lastSequence = parseInt(lastNumber.split('-')[2]);
+          contractNumber = `CON-${currentYear}-${String(lastSequence + 1).padStart(3, '0')}`;
+        }
+
+        // Insert the contract
+        const contractId = generateUUID();
+        await connection.execute(
+          `INSERT INTO contracts (
+            id, contract_number, title, description, vendor_id, contract_type_id, 
+            department_id, start_date, end_date, value, currency, payment_terms, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            contractId,
+            contractNumber,
+            contract.title,
+            contract.description || null,
+            vendorId,
+            contractTypeId,
+            departmentId,
+            formatDateForDB(startDate),
+            endDate ? formatDateForDB(endDate) : null,
+            contract.value || null,
+            contract.currency || 'USD',
+            contract.payment_terms || null,
+            contract.status.toLowerCase()
+          ]
+        );
+
+        results.successful++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Row ${rowNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    connection.release();
+
+    const success = results.successful > 0;
+    const message = success 
+      ? `Successfully uploaded ${results.successful} contracts${results.failed > 0 ? `, ${results.failed} failed` : ''}`
+      : `Upload failed. ${results.failed} contracts failed to upload`;
+
+    res.json({
+      success,
+      message,
+      details: results
+    });
+
+  } catch (error) {
+    console.error('Error uploading contracts:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to process upload',
+      details: {
+        total: 0,
+        successful: 0,
+        failed: 1,
+        errors: [error instanceof Error ? error.message : 'Unknown error']
+      }
+    });
+  }
+});
+
+// Helper function to parse CSV
+function parseCSV(csvContent: string) {
+  const lines = csvContent.split('\n').filter(line => line.trim());
+  
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+  const contracts = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+    if (values.length !== headers.length) continue;
+
+    const contract: any = {};
+    headers.forEach((header, index) => {
+      // Remove asterisks and convert to lowercase with underscores
+      const cleanHeader = header.replace(/\*/g, '').toLowerCase().replace(/\s+/g, '_');
+      contract[cleanHeader] = values[index];
+    });
+    contracts.push(contract);
+  }
+
+  return contracts;
+}
+
+// Helper function to parse dates in DD/MM/YYYY format
+function parseDate(dateString: string): Date | null {
+  if (!dateString || !dateString.trim()) return null;
+  
+  // Try DD/MM/YYYY format first
+  const ddMmYyyyMatch = dateString.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddMmYyyyMatch) {
+    const [, day, month, year] = ddMmYyyyMatch;
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+  
+  // Fallback to YYYY-MM-DD format for backward compatibility
+  const yyyyMmDdMatch = dateString.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (yyyyMmDdMatch) {
+    const [, year, month, day] = yyyyMmDdMatch;
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to format date for database (YYYY-MM-DD)
+function formatDateForDB(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper function to parse Excel files
+function parseExcel(buffer: Buffer) {
+  try {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // Convert to JSON with header row
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData.length < 2) return [];
+
+    const headers = (jsonData[0] as string[]).map(h => h.trim());
+    const contracts = [];
+
+    for (let i = 1; i < jsonData.length; i++) {
+      const values = (jsonData[i] as any[]).map(v => String(v || '').trim());
+      if (values.length !== headers.length) continue;
+
+      const contract: any = {};
+      headers.forEach((header, index) => {
+        contract[header.toLowerCase().replace(/\s+/g, '_')] = values[index];
+      });
+      contracts.push(contract);
+    }
+
+    return contracts;
+  } catch (error) {
+    console.error('Error parsing Excel file:', error);
+    return [];
+  }
+}
 
 // ===== TASKS API ENDPOINTS =====
 app.get('/api/tasks', async (req, res) => {

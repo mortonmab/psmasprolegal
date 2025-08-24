@@ -34,5 +34,22 @@ export const contractService = {
     activePercentage: number;
   }> {
     return await apiService.get('/contracts/stats');
+  },
+
+  async uploadContracts(formData: FormData): Promise<{
+    success: boolean;
+    message: string;
+    details?: {
+      total: number;
+      successful: number;
+      failed: number;
+      errors: string[];
+    };
+  }> {
+    return await apiService.post('/contracts/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
   }
 }; 
