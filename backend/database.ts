@@ -135,6 +135,7 @@ export async function initializeDatabase() {
         estimated_completion_date DATE,
         actual_completion_date DATE,
         department_id VARCHAR(36),
+        law_firm_id VARCHAR(36),
         client_name VARCHAR(255),
         judge_name VARCHAR(255),
         opposing_counsel VARCHAR(255),
@@ -144,12 +145,14 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         
         FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+        FOREIGN KEY (law_firm_id) REFERENCES law_firms(id) ON DELETE SET NULL,
         INDEX idx_case_number (case_number),
         INDEX idx_status (status),
         INDEX idx_priority (priority),
         INDEX idx_filing_date (filing_date),
         INDEX idx_case_type (case_type),
         INDEX idx_department_id (department_id),
+        INDEX idx_law_firm_id (law_firm_id),
         INDEX idx_client_name (client_name),
         INDEX idx_judge_name (judge_name)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -583,9 +586,59 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 23. Timesheet entries
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS timesheet_entries (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        entry_date DATE NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        description TEXT,
+        category ENUM('Case Work', 'Client Meeting', 'Court Appearance', 'Research', 'Administrative', 'Other') NOT NULL,
+        case_id VARCHAR(36) NULL,
+        contract_id VARCHAR(36) NULL,
+        hours DECIMAL(5,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE SET NULL,
+        INDEX idx_user_date (user_id, entry_date),
+        INDEX idx_entry_date (entry_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 24. Law firms table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS law_firms (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        firm_type ENUM('in_house', 'external') NOT NULL DEFAULT 'external',
+        address TEXT,
+        city VARCHAR(100),
+        state VARCHAR(100),
+        country VARCHAR(100),
+        postal_code VARCHAR(20),
+        contact_person VARCHAR(255),
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        website VARCHAR(255),
+        specializations TEXT,
+        bar_number VARCHAR(100),
+        status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        
+        INDEX idx_name (name),
+        INDEX idx_firm_type (firm_type),
+        INDEX idx_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     connection.release();
     console.log('✅ Database schema initialized successfully');
-    console.log('📊 Created 22 tables with proper relationships');
+    console.log('📊 Created 24 tables with proper relationships');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
     throw error;

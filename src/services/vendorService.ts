@@ -10,6 +10,10 @@ export const vendorService = {
     return await apiService.get<Vendor>(`/vendors/${id}`);
   },
 
+  async getVendor(id: string): Promise<Vendor> {
+    return await apiService.get<Vendor>(`/vendors/${id}`);
+  },
+
   async createVendor(newVendor: Omit<Vendor, 'id' | 'created_at' | 'updated_at'>): Promise<Vendor> {
     return await apiService.post<Vendor>('/vendors', newVendor);
   },

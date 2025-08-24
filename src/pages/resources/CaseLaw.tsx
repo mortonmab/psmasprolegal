@@ -14,12 +14,15 @@ import {
   X,
   Eye,
   FileText,
-  ExternalLink
+  ExternalLink,
+  Upload
 } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { scrapingService, ScrapedData } from '../../services/scrapingService';
 import { useToast } from '../../components/ui/use-toast';
+import { ManualUploadModal } from '../../components/ManualUploadModal';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 
 interface Case {
   id: string;
@@ -28,6 +31,7 @@ interface Case {
   court?: string;
   date: string;
   summary: string;
+  fullContent: string;
   source_url?: string;
   judge?: string;
   category?: string;
@@ -40,14 +44,16 @@ interface Case {
 
 export function CaseLaw() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCourt, setSelectedCourt] = useState<string>('all');
+  const [selectedCourt, setSelectedCourt] = useState<string>('All Courts');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [showDocumentPreview, setShowDocumentPreview] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All Categories');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cases, setCases] = useState<Case[]>([]);
@@ -60,7 +66,8 @@ export function CaseLaw() {
     'Constitutional Court',
     'Supreme Court',
     'Commercial Court',
-    'High Court'
+    'High Court',
+    'Unknown Court'
   ];
 
   const categories = [
@@ -69,7 +76,8 @@ export function CaseLaw() {
     'Civil Law',
     'Commercial Law',
     'Constitutional Law',
-    'Administrative Law'
+    'Administrative Law',
+    'General Law'
   ];
 
   // Fetch cases from API
@@ -93,6 +101,7 @@ export function CaseLaw() {
           court: extractCourtFromContent(item.content),
           date: item.date_published || item.scraped_at,
           summary: item.content.substring(0, 300) + '...',
+          fullContent: item.content, // Store full content
           source_url: item.source_url,
           judge: extractJudgeFromContent(item.content),
           category: determineCategory(item.content),
@@ -168,13 +177,13 @@ export function CaseLaw() {
   // Fetch cases when dependencies change
   useEffect(() => {
     fetchCases();
-  }, [currentPage, searchQuery, sortDirection]);
+  }, [currentPage, searchQuery, sortDirection, itemsPerPage]);
 
   // Enhanced filtering logic
   const filteredCases = cases.filter(c => {
     const matchesCourt = selectedCourt === 'All Courts' || c.court === selectedCourt;
     const matchesCategory = selectedCategory === 'All Categories' || c.category === selectedCategory;
-    const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = searchQuery === '' || c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         (c.citation && c.citation.toLowerCase().includes(searchQuery.toLowerCase()));
     
     return matchesCourt && matchesCategory && matchesSearch;
@@ -196,8 +205,22 @@ export function CaseLaw() {
   };
 
   const handleCaseClick = (caseItem: Case) => {
-    setSelectedCase(caseItem);
-    setShowDetails(true);
+    setSelectedDocument({
+      id: caseItem.id,
+      title: caseItem.title,
+      content: caseItem.fullContent,
+      date: caseItem.date,
+      source_url: caseItem.source_url,
+      tags: caseItem.tags,
+      type: 'Case Law',
+      category: caseItem.category,
+      jurisdiction: 'Zimbabwe',
+      citation: caseItem.citation,
+      court: caseItem.court,
+      judge: caseItem.judge,
+      parties: caseItem.parties
+    });
+    setShowDocumentPreview(true);
   };
 
   const handleCloseDetails = () => {
@@ -213,10 +236,16 @@ export function CaseLaw() {
           <h1 className="text-2xl font-bold text-gray-900">Case Law</h1>
           <p className="text-gray-600">Search and browse through case law and judgments</p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-4">
           <span className="text-sm text-gray-500">
             {totalCases} cases found
           </span>
+          <ManualUploadModal 
+            onUploadSuccess={() => {
+              // Refresh the cases list
+              fetchCases();
+            }}
+          />
         </div>
       </div>
 
@@ -392,109 +421,15 @@ export function CaseLaw() {
         </div>
       )}
 
-      {/* Case Details Modal */}
-      {showDetails && selectedCase && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">{selectedCase.title}</h2>
-                <button
-                  onClick={handleCloseDetails}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                {selectedCase.citation && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Citation</h3>
-                    <p className="text-blue-600">{selectedCase.citation}</p>
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Court</h3>
-                    <p className="text-gray-600">{selectedCase.court}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Date</h3>
-                    <p className="text-gray-600">{new Date(selectedCase.date).toLocaleDateString()}</p>
-                  </div>
-                  {selectedCase.judge && (
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Judge</h3>
-                      <p className="text-gray-600">{selectedCase.judge}</p>
-                    </div>
-                  )}
-                  {selectedCase.category && (
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Category</h3>
-                      <p className="text-gray-600">{selectedCase.category}</p>
-                    </div>
-                  )}
-                </div>
-
-                {selectedCase.parties && (selectedCase.parties.plaintiff || selectedCase.parties.defendant) && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Parties</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      {selectedCase.parties.plaintiff && (
-                        <div>
-                          <span className="text-sm font-medium text-gray-700">Plaintiff/Applicant:</span>
-                          <p className="text-gray-600">{selectedCase.parties.plaintiff}</p>
-                        </div>
-                      )}
-                      {selectedCase.parties.defendant && (
-                        <div>
-                          <span className="text-sm font-medium text-gray-700">Defendant/Respondent:</span>
-                          <p className="text-gray-600">{selectedCase.parties.defendant}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <h3 className="font-semibold text-gray-900">Summary</h3>
-                  <p className="text-gray-600 whitespace-pre-wrap">{selectedCase.summary}</p>
-                </div>
-
-                {selectedCase.tags.length > 0 && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Tags</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedCase.tags.map((tag, index) => (
-                        <span key={index} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {selectedCase.source_url && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Source</h3>
-                    <a
-                      href={selectedCase.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 flex items-center space-x-2"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      <span>View Original Source</span>
-                    </a>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={showDocumentPreview}
+        onClose={() => {
+          setShowDocumentPreview(false);
+          setSelectedDocument(null);
+        }}
+        document={selectedDocument}
+      />
     </div>
   );
 } 

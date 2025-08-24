@@ -1,9 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  AlertCircle, 
-  Clock, 
-  Filter, 
   Briefcase,
   Scale,
   TrendingUp,
@@ -15,12 +12,16 @@ import {
   ChevronRight,
   Plus,
   User,
-  Users
+  Users,
+  Building2,
+  Download,
+  FileText
 } from 'lucide-react';
 import { NewCaseModal } from '../components/NewCaseModal';
 import { CaseAssignmentModal } from '../components/CaseAssignmentModal';
 import { useCases } from '../hooks/useCases';
 import { useAuth } from '../hooks/useAuth';
+import { LawFirms } from './LawFirms';
 
 function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(' ');
@@ -32,15 +33,33 @@ export function Cases() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [mainTab, setMainTab] = useState<'my-cases' | 'all-cases'>('my-cases');
+  const [mainTab, setMainTab] = useState<'my-cases' | 'all-cases' | 'law-firms'>('my-cases');
   const [statusTab, setStatusTab] = useState<'open' | 'closed'>('open');
   const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [selectedCaseForAssignment, setSelectedCaseForAssignment] = useState<{ id: string; name: string } | null>(null);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const { cases, userCases, loading, error } = useCases();
 
   // Determine which cases to use based on main tab
   const currentCases = mainTab === 'my-cases' ? userCases : cases;
+
+  // Handle click outside to close export dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isExportDropdownOpen) {
+        const target = event.target as Element;
+        if (!target.closest('.relative.inline-block.text-left')) {
+          setIsExportDropdownOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isExportDropdownOpen]);
 
   // Main tabs for case ownership
   const mainTabs = [
@@ -57,6 +76,13 @@ export function Cases() {
       icon: Users,
       count: cases.length,
       description: 'All cases in the system'
+    },
+    { 
+      name: 'Law Firms', 
+      value: 'law-firms', 
+      icon: Building2,
+      count: null,
+      description: 'Manage legal counsel and external law firms'
     }
   ];
 
@@ -156,11 +182,11 @@ export function Cases() {
 
   const totalPages = Math.ceil(filteredCases.length / rowsPerPage);
 
-  const handleRowClick = (caseId: number) => {
+  const handleRowClick = (caseId: string) => {
     navigate(`/cases/${caseId}`);
   };
 
-  const handleMainTabChange = (newTab: 'my-cases' | 'all-cases') => {
+  const handleMainTabChange = (newTab: 'my-cases' | 'all-cases' | 'law-firms') => {
     setMainTab(newTab);
     setCurrentPage(1); // Reset to first page when switching tabs
   };
@@ -193,29 +219,184 @@ export function Cases() {
     setIsAssignmentModalOpen(true);
   };
 
+  // Export functions
+  const exportToCsv = () => {
+    const headers = [
+      'Case Number',
+      'Case Name',
+      'Client',
+      'Case Type',
+      'Status',
+      'Priority',
+      'Filing Date',
+      'Court',
+      'Judge',
+      'Opposing Counsel',
+      'Estimated Value',
+      'Department',
+      'Law Firm',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const csvData = filteredCases.map(caseItem => [
+      caseItem.case_number || '',
+      caseItem.case_name || '',
+      caseItem.client_name || '',
+      caseItem.case_type || '',
+      caseItem.status || '',
+      caseItem.priority || '',
+      caseItem.filing_date ? new Date(caseItem.filing_date).toLocaleDateString() : '',
+      caseItem.court_name || '',
+      caseItem.judge_name || '',
+      caseItem.opposing_counsel || '',
+      caseItem.estimated_value || '',
+      '', // department_name - not available in current Case type
+      '', // law_firm_name - not available in current Case type
+      new Date(caseItem.created_at).toLocaleDateString(),
+      new Date(caseItem.updated_at).toLocaleDateString()
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => 
+        row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cases-export-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToPdf = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups to export PDF');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Cases Export - ${new Date().toLocaleDateString()}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #1f2937; margin-bottom: 20px; }
+            .export-info { margin-bottom: 20px; color: #6b7280; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f9fafb; font-weight: bold; }
+            tr:nth-child(even) { background-color: #f9fafb; }
+            .status-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+            .status-open { background-color: #d1fae5; color: #065f46; }
+            .status-closed { background-color: #f3f4f6; color: #374151; }
+            .status-pending { background-color: #fef3c7; color: #92400e; }
+            .priority-high { background-color: #fee2e2; color: #991b1b; }
+            .priority-medium { background-color: #fef3c7; color: #92400e; }
+            .priority-low { background-color: #d1fae5; color: #065f46; }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Cases Export Report</h1>
+          <div class="export-info">
+            <p><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</p>
+            <p><strong>Total Cases:</strong> ${filteredCases.length}</p>
+            <p><strong>Filter Applied:</strong> ${mainTab === 'my-cases' ? 'My Cases' : 'All Cases'} - ${statusTab === 'open' ? 'Open Cases' : 'Closed Cases'}</p>
+            ${searchQuery ? `<p><strong>Search Query:</strong> "${searchQuery}"</p>` : ''}
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Case Number</th>
+                <th>Case Name</th>
+                <th>Client</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Filing Date</th>
+                <th>Court</th>
+                <th>Judge</th>
+                <th>Estimated Value</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredCases.map(caseItem => `
+                <tr>
+                  <td>${caseItem.case_number || ''}</td>
+                  <td>${caseItem.case_name || ''}</td>
+                  <td>${caseItem.client_name || ''}</td>
+                  <td>${caseItem.case_type || ''}</td>
+                  <td><span class="status-badge status-${caseItem.status}">${caseItem.status || ''}</span></td>
+                  <td><span class="status-badge priority-${caseItem.priority}">${caseItem.priority || ''}</span></td>
+                  <td>${caseItem.filing_date ? new Date(caseItem.filing_date).toLocaleDateString() : ''}</td>
+                  <td>${caseItem.court_name || ''}</td>
+                  <td>${caseItem.judge_name || ''}</td>
+                  <td>${caseItem.estimated_value || ''}</td>
+                  <td>${new Date(caseItem.created_at).toLocaleDateString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              }
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="sm:flex sm:items-center sm:justify-between">
         <div className="sm:flex-auto">
-          <h1 className="text-2xl font-semibold text-gray-900">Cases</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {mainTab === 'law-firms' ? 'Law Firms' : 'Cases'}
+          </h1>
           <p className="mt-2 text-sm text-gray-700">
             {mainTab === 'my-cases' 
               ? 'Cases assigned to you or where you are a collaborator. You can edit, make updates, and upload documents to these cases.'
-              : 'All legal cases in the system. You can only edit cases you are assigned to or invited as a collaborator.'
+              : mainTab === 'all-cases'
+              ? 'All legal cases in the system. You can only edit cases you are assigned to or invited as a collaborator.'
+              : 'Manage legal counsel and external law firms assigned to cases.'
             }
           </p>
         </div>
-        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-          <button
-            type="button"
-            onClick={() => setIsNewCaseModalOpen(true)}
-            className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add case
-          </button>
-        </div>
+        {mainTab !== 'law-firms' && (
+          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+            <button
+              type="button"
+              onClick={() => setIsNewCaseModalOpen(true)}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add case
+            </button>
+          </div>
+        )}
       </div>
 
       <NewCaseModal 
@@ -245,7 +426,7 @@ export function Cases() {
             return (
               <button
                 key={tab.value}
-                onClick={() => handleMainTabChange(tab.value as 'my-cases' | 'all-cases')}
+                onClick={() => handleMainTabChange(tab.value as 'my-cases' | 'all-cases' | 'law-firms')}
                 className={classNames(
                   tab.value === mainTab
                     ? 'border-blue-500 text-blue-600'
@@ -263,7 +444,7 @@ export function Cases() {
                     'ml-3 hidden sm:inline-block py-0.5 px-2.5 rounded-full text-xs'
                   )}
                 >
-                  {tab.count}
+                  {tab.count !== null ? tab.count : ''}
                 </span>
               </button>
             );
@@ -271,8 +452,11 @@ export function Cases() {
         </nav>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Cases Content */}
+      {mainTab !== 'law-firms' && (
+        <>
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {caseStats.map((stat) => {
           const Icon = stat.icon;
           return (
@@ -298,30 +482,30 @@ export function Cases() {
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-gray-500">YTD</span>
                       <div className="flex items-center">
-                        {stat.metrics.ytd.trend === 'up' ? (
+                        {stat.metrics?.ytd?.trend === 'up' ? (
                           <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
                         ) : (
                           <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
                         )}
                         <span className={`font-medium ${
-                          stat.metrics.ytd.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                          stat.metrics?.ytd?.trend === 'up' ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {stat.metrics.ytd.value}
+                          {stat.metrics?.ytd?.value}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-500">MTD</span>
                       <div className="flex items-center">
-                        {stat.metrics.mtd.trend === 'up' ? (
+                        {stat.metrics?.mtd?.trend === 'up' ? (
                           <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
                         ) : (
                           <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
                         )}
                         <span className={`font-medium ${
-                          stat.metrics.mtd.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                          stat.metrics?.mtd?.trend === 'up' ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {stat.metrics.mtd.value}
+                          {stat.metrics?.mtd?.value}
                         </span>
                       </div>
                     </div>
@@ -381,7 +565,101 @@ export function Cases() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <div className="mt-4 sm:mt-0 sm:ml-4 flex items-center space-x-4">
+          {/* Export Dropdown */}
+          <div className="relative inline-block text-left">
+            <button
+              type="button"
+              className="group inline-flex items-center px-4 py-2.5 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:scale-105"
+              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+            >
+              <Download className="h-4 w-4 mr-2 group-hover:animate-bounce" />
+              <span className="mr-2">Export</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 group-hover:bg-white group-hover:text-blue-700 transition-colors duration-200">
+                {filteredCases.length}
+              </span>
+              <svg 
+                className={`-mr-1 ml-2 h-4 w-4 transition-transform duration-200 ${isExportDropdownOpen ? 'rotate-180' : ''}`} 
+                xmlns="http://www.w3.org/2000/svg" 
+                viewBox="0 0 20 20" 
+                fill="currentColor"
+              >
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+            
+            {isExportDropdownOpen && (
+              <div className="absolute right-0 z-20 mt-3 w-64 origin-top-right">
+                <div className="rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 backdrop-blur-sm border border-gray-100 overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Export Data</h3>
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700">
+                        {filteredCases.length} cases
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Choose your preferred format</p>
+                  </div>
+                  
+                  {/* Options */}
+                  <div className="py-2">
+                    <button
+                      onClick={() => {
+                        exportToCsv();
+                        setIsExportDropdownOpen(false);
+                      }}
+                      className="group flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-green-50 hover:text-green-800 transition-all duration-200"
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors duration-200">
+                        <FileText className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div className="ml-3 text-left flex-1">
+                        <div className="font-medium group-hover:text-green-900">Export as CSV</div>
+                        <div className="text-xs text-gray-500 group-hover:text-green-600">Spreadsheet format • Excel compatible</div>
+                      </div>
+                      <div className="flex-shrink-0 ml-2">
+                        <svg className="h-4 w-4 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        exportToPdf();
+                        setIsExportDropdownOpen(false);
+                      }}
+                      className="group flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-800 transition-all duration-200"
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 transition-colors duration-200">
+                        <FileText className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div className="ml-3 text-left flex-1">
+                        <div className="font-medium group-hover:text-red-900">Export as PDF</div>
+                        <div className="text-xs text-gray-500 group-hover:text-red-600">Professional report • Print ready</div>
+                      </div>
+                      <div className="flex-shrink-0 ml-2">
+                        <svg className="h-4 w-4 text-gray-400 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                  
+                  {/* Footer */}
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 text-center">
+                      Current filters applied: {mainTab === 'my-cases' ? 'My Cases' : 'All Cases'} • {statusTab === 'open' ? 'Open' : 'Closed'}
+                      {searchQuery && ` • "${searchQuery}"`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Rows per page selector */}
           <select
             value={rowsPerPage}
             onChange={(e) => {
@@ -445,7 +723,7 @@ export function Cases() {
                         {caseItem.case_name}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {caseItem.department}
+                        {caseItem.department_id || '-'}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -546,6 +824,13 @@ export function Cases() {
           </div>
         </div>
       </div>
+        </>
+      )}
+
+      {/* Law Firms Content */}
+      {mainTab === 'law-firms' && (
+        <LawFirms />
+      )}
     </div>
   );
 }

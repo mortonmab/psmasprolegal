@@ -14,18 +14,24 @@ import {
   AlertCircle,
   X,
   Lock,
-  UserPlus
+  UserPlus,
+  Building2,
+  Phone,
+  Mail,
+  Globe
 } from 'lucide-react';
 import { caseService } from '../services/caseService';
 import { documentService } from '../services/documentService';
+import { lawFirmService } from '../services/lawFirmService';
 import { NewCaseUpdateModal } from '../components/NewCaseUpdateModal';
 import { DocumentUploadModal } from '../components/DocumentUploadModal';
 import { CaseAssignmentModal } from '../components/CaseAssignmentModal';
 import { CaseEditForm } from '../components/CaseEditForm';
+import { CloseCaseModal } from '../components/CloseCaseModal';
 import { useAuth } from '../hooks/useAuth';
 import { useCases } from '../hooks/useCases';
 
-import type { Case, CaseUpdate, Document } from '../lib/types';
+import type { Case, CaseUpdate, Document, LawFirm } from '../lib/types';
 
 type TabType = 'details' | 'updates' | 'documents' | 'collaborators';
 
@@ -48,6 +54,10 @@ export function CaseDetails() {
   const [updatesLoading, setUpdatesLoading] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [lawFirm, setLawFirm] = useState<LawFirm | null>(null);
+  const [lawFirmLoading, setLawFirmLoading] = useState(false);
+  const [isCloseCaseModalOpen, setIsCloseCaseModalOpen] = useState(false);
+  const [closeCaseLoading, setCloseCaseLoading] = useState(false);
 
   // Check if user can edit this case (collaborator)
   const canEditCase = () => {
@@ -65,7 +75,18 @@ export function CaseDetails() {
     // Refresh the case details to show updated assignments
     if (id) {
       caseService.getCaseById(id)
-        .then(data => setCaseDetails(data))
+        .then(data => {
+          const previousLawFirmId = caseDetails?.law_firm_id;
+          setCaseDetails(data);
+          // Reload law firm if it changed
+          if (data.law_firm_id !== previousLawFirmId) {
+            if (data.law_firm_id) {
+              loadLawFirm(data.law_firm_id);
+            } else {
+              setLawFirm(null);
+            }
+          }
+        })
         .catch(err => console.error('Error refreshing case details:', err));
     }
   };
@@ -76,6 +97,14 @@ export function CaseDetails() {
     try {
       setCaseDetails(updatedCase);
       setIsEditing(false);
+      // Reload law firm if it changed
+      if (updatedCase.law_firm_id !== caseDetails?.law_firm_id) {
+        if (updatedCase.law_firm_id) {
+          loadLawFirm(updatedCase.law_firm_id);
+        } else {
+          setLawFirm(null);
+        }
+      }
     } catch (error) {
       console.error('Error updating case:', error);
     } finally {
@@ -83,11 +112,65 @@ export function CaseDetails() {
     }
   };
 
+  // Load law firm data
+  const loadLawFirm = async (lawFirmId: string) => {
+    setLawFirmLoading(true);
+    try {
+      const lawFirmData = await lawFirmService.getLawFirmById(lawFirmId);
+      setLawFirm(lawFirmData);
+    } catch (error) {
+      console.error('Error loading law firm:', error);
+      setLawFirm(null);
+    } finally {
+      setLawFirmLoading(false);
+    }
+  };
+
+  // Handle close case
+  const handleCloseCase = async (reason: string) => {
+    if (!caseDetails || !id) return;
+    
+    setCloseCaseLoading(true);
+    try {
+      // Update case status to closed
+      const updatedCase = await caseService.updateCase(id, {
+        status: 'closed',
+        actual_completion_date: new Date().toISOString().split('T')[0]
+      });
+      
+      // Create a case update entry for the closure
+      await caseService.createCaseUpdate(id, {
+        user_id: user?.id || '',
+        update_type: 'status_change',
+        title: 'Case Closed',
+        content: `Case was closed. Reason: ${reason}`
+      });
+      
+      setCaseDetails(updatedCase);
+      setIsCloseCaseModalOpen(false);
+      
+      // Show success message (you might want to add a toast notification here)
+      console.log('Case closed successfully');
+      
+    } catch (error) {
+      console.error('Error closing case:', error);
+      // Show error message (you might want to add a toast notification here)
+    } finally {
+      setCloseCaseLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       setLoading(true);
       caseService.getCaseById(id)
-        .then(data => setCaseDetails(data))
+        .then(data => {
+          setCaseDetails(data);
+          // Load law firm if case has one assigned
+          if (data.law_firm_id) {
+            loadLawFirm(data.law_firm_id);
+          }
+        })
         .catch(err => setError(err instanceof Error ? err : new Error('Failed to load case')))
         .finally(() => setLoading(false));
     }
@@ -235,6 +318,87 @@ export function CaseDetails() {
                             </div>
                           )}
                         </div>
+                        
+                        {/* Law Firm Section */}
+                        <div className="border-t border-gray-200 pt-4">
+                          <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center">
+                            <Building2 className="h-4 w-4 mr-2" />
+                            Legal Counsel
+                          </h3>
+                          {lawFirmLoading ? (
+                            <div className="flex items-center space-x-2">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                              <span className="text-sm text-gray-500">Loading law firm...</span>
+                            </div>
+                          ) : lawFirm ? (
+                            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="text-sm font-medium text-gray-900">{lawFirm.name}</h4>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-1 ${
+                                    lawFirm.firm_type === 'in_house' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                                  }`}>
+                                    {lawFirm.firm_type === 'in_house' ? 'In-House Legal Team' : 'External Law Firm'}
+                                  </span>
+                                </div>
+                                <div className={`p-2 rounded-lg ${lawFirm.firm_type === 'in_house' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+                                  <Building2 className={`h-5 w-5 ${lawFirm.firm_type === 'in_house' ? 'text-blue-600' : 'text-purple-600'}`} />
+                                </div>
+                              </div>
+                              
+                              {(lawFirm.contact_person || lawFirm.email || lawFirm.phone || lawFirm.website) && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                  {lawFirm.contact_person && (
+                                    <div className="flex items-center space-x-2">
+                                      <Users className="h-4 w-4 text-gray-400" />
+                                      <span className="text-gray-900">{lawFirm.contact_person}</span>
+                                    </div>
+                                  )}
+                                  {lawFirm.email && (
+                                    <div className="flex items-center space-x-2">
+                                      <Mail className="h-4 w-4 text-gray-400" />
+                                      <a href={`mailto:${lawFirm.email}`} className="text-blue-600 hover:text-blue-800">
+                                        {lawFirm.email}
+                                      </a>
+                                    </div>
+                                  )}
+                                  {lawFirm.phone && (
+                                    <div className="flex items-center space-x-2">
+                                      <Phone className="h-4 w-4 text-gray-400" />
+                                      <a href={`tel:${lawFirm.phone}`} className="text-blue-600 hover:text-blue-800">
+                                        {lawFirm.phone}
+                                      </a>
+                                    </div>
+                                  )}
+                                  {lawFirm.website && (
+                                    <div className="flex items-center space-x-2">
+                                      <Globe className="h-4 w-4 text-gray-400" />
+                                      <a href={lawFirm.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                        {lawFirm.website}
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {lawFirm.specializations && (
+                                <div>
+                                  <h5 className="text-xs font-medium text-gray-500 mb-1">Specializations</h5>
+                                  <p className="text-sm text-gray-900">{lawFirm.specializations}</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : caseDetails.law_firm_id ? (
+                            <div className="text-sm text-red-600">
+                              Law firm information unavailable
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500 italic">
+                              No law firm assigned to this case
+                            </div>
+                          )}
+                        </div>
+
                         {caseDetails.description && (
                           <div>
                             <h3 className="text-sm font-medium text-gray-500">Description</h3>
@@ -694,7 +858,10 @@ export function CaseDetails() {
                 </button>
               )}
               {caseDetails.status === 'open' && canEditCase() && (
-                <button className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <button 
+                  onClick={() => setIsCloseCaseModalOpen(true)}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
                   <AlertCircle className="h-4 w-4 mr-2" />
                   Close Case
                 </button>
@@ -788,6 +955,16 @@ export function CaseDetails() {
         />
       )}
 
+      {/* Close Case Modal */}
+      {id && caseDetails && (
+        <CloseCaseModal
+          isOpen={isCloseCaseModalOpen}
+          onClose={() => setIsCloseCaseModalOpen(false)}
+          onConfirm={handleCloseCase}
+          caseName={caseDetails.case_name}
+          loading={closeCaseLoading}
+        />
+      )}
 
     </div>
   );

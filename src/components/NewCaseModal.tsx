@@ -1,6 +1,9 @@
-import { X } from 'lucide-react';
+import { X, Plus, Scale } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useCases } from '../hooks/useCases';
+import { lawFirmService } from '../services/lawFirmService';
+import { LawFirm } from '../lib/types';
+import { NewLawFirmModal } from './NewLawFirmModal';
 
 interface NewCaseModalProps {
   isOpen: boolean;
@@ -22,21 +25,28 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
     status: 'open' | 'pending' | 'closed' | 'archived';
     filing_date: string;
     description: string;
+    law_firm_id: string;
   }>({
     case_name: '',
     case_type: 'civil',
     status: 'open',
     filing_date: '',
-    description: ''
+    description: '',
+    law_firm_id: ''
   });
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [lawFirms, setLawFirms] = useState<LawFirm[]>([]);
+  const [loadingLawFirms, setLoadingLawFirms] = useState(false);
+  const [showNewLawFirmModal, setShowNewLawFirmModal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setLoadingDepartments(true);
-      // For now, we'll use hardcoded departments until we implement the departments API
+      setLoadingLawFirms(true);
+      
+      // Load departments
       const mockDepartments: Department[] = [
         { id: '1', name: 'Legal Department' },
         { id: '2', name: 'HR Department' },
@@ -45,8 +55,45 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
       ];
       setDepartments(mockDepartments);
       setLoadingDepartments(false);
+
+      // Load law firms
+      loadLawFirms();
     }
   }, [isOpen]);
+
+  const loadLawFirms = async () => {
+    try {
+      const firms = await lawFirmService.getAllLawFirms();
+      
+      // Add "In House" as the first option if it doesn't exist
+      const inHouseFirm: LawFirm = {
+        id: 'in-house',
+        name: 'In House',
+        firm_type: 'in_house',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      };
+      
+      const hasInHouse = firms.some(firm => firm.firm_type === 'in_house');
+      const allFirms = hasInHouse ? firms : [inHouseFirm, ...firms];
+      
+      setLawFirms(allFirms);
+    } catch (error) {
+      console.error('Error loading law firms:', error);
+      // Fallback to just In House option
+      setLawFirms([{
+        id: 'in-house',
+        name: 'In House',
+        firm_type: 'in_house',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      }]);
+    } finally {
+      setLoadingLawFirms(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,11 +106,17 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
         description: formData.description,
         priority: 'medium',
         filing_date: formData.filing_date || undefined,
+        law_firm_id: formData.law_firm_id || undefined,
       });
       onClose();
     } catch (error) {
       console.error('Error creating case:', error);
     }
+  };
+
+  const handleLawFirmCreated = (newLawFirm: LawFirm) => {
+    setLawFirms(prev => [...prev, newLawFirm]);
+    setFormData(prev => ({ ...prev, law_firm_id: newLawFirm.id }));
   };
 
   if (!isOpen) return null;
@@ -119,6 +172,38 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
                   <option value="employment">Employment</option>
                   <option value="other">Other</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Law Firm
+                </label>
+                <div className="mt-1 flex">
+                  <select
+                    className="block w-full rounded-l-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={formData.law_firm_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, law_firm_id: e.target.value }))}
+                    disabled={loadingLawFirms}
+                  >
+                    <option value="">Select Law Firm...</option>
+                    {lawFirms.map((firm) => (
+                      <option key={firm.id} value={firm.id}>
+                        {firm.name} {firm.firm_type === 'in_house' ? '(In House)' : '(External)'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewLawFirmModal(true)}
+                    className="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-700 rounded-r-md hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    title="Add new law firm"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                {loadingLawFirms && (
+                  <p className="mt-1 text-sm text-gray-500">Loading law firms...</p>
+                )}
               </div>
 
               <div>
@@ -187,6 +272,13 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
           </form>
         </div>
       </div>
+
+      {/* New Law Firm Modal */}
+      <NewLawFirmModal
+        isOpen={showNewLawFirmModal}
+        onClose={() => setShowNewLawFirmModal(false)}
+        onLawFirmCreated={handleLawFirmCreated}
+      />
     </div>
   );
 }

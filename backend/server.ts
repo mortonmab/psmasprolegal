@@ -26,7 +26,10 @@ declare global {
 dotenv.config();
 
 interface ScrapingSource {
+  id?: string;
+  name?: string;
   url: string;
+  source_type?: string;
   selectors: {
     title: string;
     content: string;
@@ -38,12 +41,13 @@ interface ScrapingSource {
 interface ScrapeJobStatus {
   status: 'in_progress' | 'completed' | 'failed';
   progress: number;
-  data?: {
+  data?: Array<{
     title: string;
     content: string;
     date: string | null;
     reference: string | null;
-  };
+    source_url?: string;
+  }>;
   error?: string;
 }
 
@@ -158,25 +162,100 @@ async function scrapeWebsite(source: ScrapingSource, searchParams: ScrapeRequest
     
     await page.goto(url.toString());
     
-    // Extract data using selectors
-    const data = await page.evaluate((selectors) => {
-      const title = document.querySelector(selectors.title)?.textContent?.trim() || '';
-      const content = document.querySelector(selectors.content)?.textContent?.trim() || '';
-      const date = selectors.date ? document.querySelector(selectors.date)?.textContent?.trim() || null : null;
-      const reference = selectors.reference ? document.querySelector(selectors.reference)?.textContent?.trim() || null : null;
+    // Check if this is a Veritas Zimbabwe source
+    const isVeritasSource = source.url.includes('veritaszim.net');
+    
+    let scrapedData = [];
+    
+    if (isVeritasSource) {
+      // For Veritas Zimbabwe, we need to scrape case listings
+      scrapedData = await page.evaluate((sourceUrl: string) => {
+        const cases: Array<{
+          title: string;
+          content: string;
+          date: string | null;
+          reference: string;
+          source_url: string;
+        }> = [];
+        
+        // Look for case links in the content
+        const caseLinks = document.querySelectorAll('a[href*="constitutional-court"], a[href*="supreme-court"], a[href*="high-court"], a[href*="electoral-court"], a[href*="labour-court"]');
+        
+        caseLinks.forEach((link) => {
+          const title = link.textContent?.trim() || '';
+          const href = link.getAttribute('href') || '';
+          
+          if (title && href) {
+            cases.push({
+              title,
+              content: `Case: ${title}`,
+              date: null,
+              reference: href.split('/').pop() || '',
+              source_url: href.startsWith('http') ? href : `https://www.veritaszim.net${href}`
+            });
+          }
+        });
+        
+        // Also look for any text that looks like case references
+        const textContent = document.body.textContent || '';
+        const casePattern = /(CCZ|SC|HH|ECH|LC)\s*\d+[-\/]\d+/g;
+        const matches = textContent.match(casePattern);
+        
+        if (matches) {
+          matches.forEach((match) => {
+            if (!cases.some(c => c.reference === match)) {
+              cases.push({
+                title: `Case ${match}`,
+                content: `Case reference: ${match}`,
+                date: null,
+                reference: match,
+                source_url: sourceUrl
+              });
+            }
+          });
+        }
+        
+        return cases;
+      }, source.url);
+    } else {
+      // For other sources, use the original single-page scraping
+      const data = await page.evaluate((selectors) => {
+        const title = document.querySelector(selectors.title)?.textContent?.trim() || '';
+        const content = document.querySelector(selectors.content)?.textContent?.trim() || '';
+        const date = selectors.date ? document.querySelector(selectors.date)?.textContent?.trim() || null : null;
+        const reference = selectors.reference ? document.querySelector(selectors.reference)?.textContent?.trim() || null : null;
+        
+        return { title, content, date, reference };
+      }, source.selectors);
       
-      return { title, content, date, reference };
-    }, source.selectors);
+      scrapedData = [{
+        ...data,
+        source_url: source.url
+      }];
+    }
     
     await browser.close();
     
     // Store scraped data in MySQL
     const connection = await pool.getConnection();
     try {
-      await connection.execute(
-        'INSERT INTO scraped_data (title, content, date, reference, source_url) VALUES (?, ?, ?, ?, ?)',
-        [data.title, data.content, data.date, data.reference, source.url]
-      );
+      for (const data of scrapedData) {
+        await connection.execute(
+          'INSERT INTO scraped_data (id, title, content, source_type, source_url, source_name, date_published, reference_number, jurisdiction, keywords, scraped_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [
+            crypto.randomUUID(),
+            data.title,
+            data.content,
+            source.source_type || 'case_law',
+            data.source_url,
+            source.name || 'Unknown Source',
+            data.date,
+            data.reference,
+            'Zimbabwe',
+            `${source.name || 'Unknown Source'} ${data.title}`
+          ]
+        );
+      }
     } finally {
       connection.release();
     }
@@ -184,7 +263,7 @@ async function scrapeWebsite(source: ScrapingSource, searchParams: ScrapeRequest
     scrapeJobs.set(jobId, {
       status: 'completed', 
       progress: 100,
-      data
+      data: scrapedData
     });
   } catch (error) {
     scrapeJobs.set(jobId, {
@@ -248,6 +327,316 @@ app.get('/api/scrape/status/:jobId', (req, res) => {
   res.json(status);
 });
 
+// ===== REPORTS API ENDPOINTS =====
+import { ReportsService } from './reportsService';
+
+// Get case summary report
+app.get('/api/reports/cases', async (req, res) => {
+  try {
+    const filters = {
+      status: req.query.status as string,
+      department: req.query.department as string,
+      assigned_to: req.query.assigned_to as string,
+      date_from: req.query.date_from as string,
+      date_to: req.query.date_to as string,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+    };
+
+    // Simple test query first
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(`
+        SELECT 
+          c.id,
+          c.case_number,
+          c.case_name,
+          c.status,
+          c.case_type,
+          c.priority,
+          c.filing_date,
+          c.court_name,
+          c.client_name,
+          c.judge_name,
+          c.created_at,
+          c.updated_at
+        FROM cases c
+        ORDER BY c.created_at DESC
+        LIMIT 20
+      `);
+
+      res.json({
+        data: rows,
+        total: (rows as any[]).length,
+        page: 1,
+        limit: 20,
+        pages: 1
+      });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching case summary report:', error);
+    res.status(500).json({ error: 'Failed to fetch case summary report' });
+  }
+});
+
+// Get contracts summary report
+app.get('/api/reports/contracts', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(`
+        SELECT 
+          c.id,
+          c.contract_number,
+          c.title,
+          c.description,
+          ct.name as contract_type,
+          c.status,
+          c.start_date,
+          c.end_date,
+          c.value,
+          c.currency,
+          c.payment_terms,
+          v.name as vendor_name,
+          v.company_type as vendor_type,
+          v.contact_person as vendor_contact,
+          v.email as vendor_email,
+          v.phone as vendor_phone,
+          d.name as department_name,
+          c.created_at,
+          c.updated_at,
+          CASE 
+            WHEN c.end_date < CURDATE() THEN 'Expired'
+            WHEN c.end_date < DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring Soon'
+            WHEN c.status = 'active' THEN 'Active'
+            ELSE c.status
+          END as contract_status
+        FROM contracts c
+        LEFT JOIN vendors v ON c.vendor_id = v.id
+        LEFT JOIN contract_types ct ON c.contract_type_id = ct.id
+        LEFT JOIN departments d ON c.department_id = d.id
+        ORDER BY c.created_at DESC
+        LIMIT 50
+      `);
+
+      res.json({
+        data: rows,
+        total: (rows as any[]).length,
+        page: 1,
+        limit: 50,
+        pages: 1
+      });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error fetching contracts summary report:', error);
+    res.status(500).json({ error: 'Failed to fetch contracts summary report' });
+  }
+});
+
+// Get financial summary report
+app.get('/api/reports/financial', async (req, res) => {
+  try {
+    const filters = {
+      period: req.query.period as string,
+      type: req.query.type as string,
+      date_from: req.query.date_from as string,
+      date_to: req.query.date_to as string,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+    };
+
+    const result = await ReportsService.getFinancialSummaryReport(filters);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching financial summary report:', error);
+    res.status(500).json({ error: 'Failed to fetch financial summary report' });
+  }
+});
+
+// Get user activity report
+app.get('/api/reports/activity', async (req, res) => {
+  try {
+    const filters = {
+      user: req.query.user as string,
+      action: req.query.action as string,
+      date_from: req.query.date_from as string,
+      date_to: req.query.date_to as string,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+    };
+
+    const result = await ReportsService.getUserActivityReport(filters);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching user activity report:', error);
+    res.status(500).json({ error: 'Failed to fetch user activity report' });
+  }
+});
+
+// Get performance metrics report
+app.get('/api/reports/performance', async (req, res) => {
+  try {
+    const filters = {
+      metric: req.query.metric as string,
+      timeframe: req.query.timeframe as string,
+      date_from: req.query.date_from as string,
+      date_to: req.query.date_to as string,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+    };
+
+    const result = await ReportsService.getPerformanceMetricsReport(filters);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching performance metrics report:', error);
+    res.status(500).json({ error: 'Failed to fetch performance metrics report' });
+  }
+});
+
+// Get compliance report
+app.get('/api/reports/compliance', async (req, res) => {
+  try {
+    const filters = {
+      status: req.query.status as string,
+      category: req.query.category as string,
+      date_from: req.query.date_from as string,
+      date_to: req.query.date_to as string,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+    };
+
+    const result = await ReportsService.getComplianceReport(filters);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching compliance report:', error);
+    res.status(500).json({ error: 'Failed to fetch compliance report' });
+  }
+});
+
+// Get filter options for reports
+app.get('/api/reports/filter-options/:reportType', async (req, res) => {
+  try {
+    const { reportType } = req.params;
+    const options = await ReportsService.getFilterOptions(reportType);
+    res.json(options);
+  } catch (error) {
+    console.error('Error fetching filter options:', error);
+    res.status(500).json({ error: 'Failed to fetch filter options' });
+  }
+});
+
+// Export report data
+app.get('/api/reports/export/:reportType', async (req, res) => {
+  try {
+    const { reportType } = req.params;
+    const { format, ...filters } = req.query;
+
+    let result;
+    switch (reportType) {
+      case 'case-summary':
+        result = await ReportsService.getCaseSummaryReport(filters);
+        break;
+      case 'contracts-summary':
+        // Use the direct contracts endpoint for now
+        const connection = await pool.getConnection();
+        try {
+          const [rows] = await connection.execute(`
+            SELECT 
+              c.id,
+              c.contract_number,
+              c.title,
+              c.description,
+              ct.name as contract_type,
+              c.status,
+              c.start_date,
+              c.end_date,
+              c.value,
+              c.currency,
+              c.payment_terms,
+              v.name as vendor_name,
+              v.company_type as vendor_type,
+              v.contact_person as vendor_contact,
+              v.email as vendor_email,
+              v.phone as vendor_phone,
+              d.name as department_name,
+              c.created_at,
+              c.updated_at
+            FROM contracts c
+            LEFT JOIN vendors v ON c.vendor_id = v.id
+            LEFT JOIN contract_types ct ON c.contract_type_id = ct.id
+            LEFT JOIN departments d ON c.department_id = d.id
+            ORDER BY c.created_at DESC
+          `);
+          result = {
+            data: rows,
+            total: (rows as any[]).length,
+            page: 1,
+            limit: 20,
+            pages: 1
+          };
+        } finally {
+          connection.release();
+        }
+        break;
+      case 'financial-summary':
+        result = await ReportsService.getFinancialSummaryReport(filters);
+        break;
+      case 'user-activity':
+        result = await ReportsService.getUserActivityReport(filters);
+        break;
+      case 'performance-metrics':
+        result = await ReportsService.getPerformanceMetricsReport(filters);
+        break;
+      case 'compliance-report':
+        result = await ReportsService.getComplianceReport(filters);
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid report type' });
+    }
+
+    if (format === 'csv') {
+      // Generate CSV
+      const data = result.data as any[];
+      const headers = data.length > 0 ? Object.keys(data[0]) : [];
+      const csvContent = [
+        headers.join(','),
+        ...data.map((row: any) => 
+          headers.map(header => {
+            const value = row[header];
+            return typeof value === 'string' && value.includes(',') ? `"${value}"` : value;
+          }).join(',')
+        )
+      ].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportType}_${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send(csvContent);
+    } else if (format === 'pdf') {
+      // Generate PDF (simplified for now)
+      const data = result.data as any[];
+      const pdfContent = `
+        ${reportType.replace('-', ' ').toUpperCase()} REPORT
+        Generated on: ${new Date().toLocaleDateString()}
+        
+        ${data.map((row: any) => Object.entries(row).map(([key, value]) => `${key}: ${value}`).join(', ')).join('\n')}
+      `;
+
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportType}_${new Date().toISOString().split('T')[0]}.txt"`);
+      res.send(pdfContent);
+    } else {
+      res.status(400).json({ error: 'Invalid export format' });
+    }
+  } catch (error) {
+    console.error('Error exporting report:', error);
+    res.status(500).json({ error: 'Failed to export report' });
+  }
+});
+
 // ===== SCRAPING SOURCES API ENDPOINTS =====
 
 // Get all scraping sources
@@ -284,7 +673,7 @@ app.get('/api/scraping-sources/:id', async (req, res) => {
         return;
       }
       
-      res.json(rows[0]);
+      res.json((rows as any)[0]);
     } finally {
       connection.release();
     }
@@ -317,7 +706,7 @@ app.post('/api/scraping-sources', async (req, res) => {
         [id]
       );
       
-      res.status(201).json(rows[0]);
+      res.status(201).json((rows as any)[0]);
     } finally {
       connection.release();
     }
@@ -385,7 +774,7 @@ app.put('/api/scraping-sources/:id', async (req, res) => {
         [id]
       );
       
-      res.json(updatedRows[0]);
+      res.json((updatedRows as any)[0]);
     } finally {
       connection.release();
     }
@@ -441,6 +830,11 @@ app.get('/api/scraped-data', async (req, res) => {
       sort_order = 'desc'
     } = req.query;
     
+    // Validate sort_by to prevent SQL injection
+    const allowedSortFields = ['scraped_at', 'title', 'date_published', 'source_name'];
+    const safeSortBy = allowedSortFields.includes(sort_by as string) ? sort_by : 'scraped_at';
+    const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC';
+    
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
     
     let whereClause = 'WHERE 1=1';
@@ -473,8 +867,8 @@ app.get('/api/scraped-data', async (req, res) => {
       
       // Get paginated results
       const [rows] = await connection.execute(
-        `SELECT * FROM scraped_data ${whereClause} ORDER BY ${sort_by} ${sort_order} LIMIT ? OFFSET ?`,
-        [...params, parseInt(limit as string), offset]
+        `SELECT * FROM scraped_data ${whereClause} ORDER BY ${safeSortBy} ${safeSortOrder} LIMIT ? OFFSET ?`,
+        [...params, parseInt(limit as string), parseInt(offset.toString())]
       );
       
       res.json({
@@ -511,7 +905,7 @@ app.get('/api/scraped-data/:id', async (req, res) => {
         return;
       }
       
-      res.json(rows[0]);
+      res.json((rows as any)[0]);
     } finally {
       connection.release();
     }
@@ -541,6 +935,58 @@ app.get('/api/scraped-data/stats', async (req, res) => {
   } catch (error) {
     console.error('Error fetching scraped data stats:', error);
     res.status(500).json({ error: 'Failed to fetch scraped data statistics' });
+  }
+});
+
+// Manual upload endpoint
+app.post('/api/scraped-data/manual-upload', upload.single('file'), async (req, res) => {
+  try {
+    const { title, source_type } = req.body;
+    const file = req.file;
+
+    if (!title || !source_type || !file) {
+      return res.status(400).json({ error: 'Title, source_type, and file are required' });
+    }
+
+    // Extract content from file
+    let content = '';
+    if (file.mimetype === 'text/plain') {
+      content = file.buffer.toString('utf8');
+    } else {
+      // For other file types, store file path and extract content later if needed
+      content = `File uploaded: ${file.originalname}`;
+    }
+
+    const connection = await pool.getConnection();
+    try {
+      const id = crypto.randomUUID();
+      
+      await connection.execute(
+        'INSERT INTO scraped_data (id, title, content, source_type, source_url, source_name, date_published, reference_number, jurisdiction, keywords, scraped_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+        [
+          id,
+          title,
+          content,
+          source_type,
+          file.path || '',
+          'Manual Upload',
+          new Date().toISOString().split('T')[0],
+          '',
+          'Zimbabwe',
+          `${title} ${source_type}`
+        ]
+      );
+
+      res.status(201).json({
+        id,
+        message: 'Legal resource uploaded successfully'
+      });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error uploading legal resource:', error);
+    res.status(500).json({ error: 'Failed to upload legal resource' });
   }
 });
 
@@ -3014,6 +3460,366 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching upcoming events:', error);
     res.status(500).json({ error: 'Failed to fetch upcoming events' });
+  }
+});
+
+// ===== TIMESHEET API ENDPOINTS =====
+app.get('/api/timesheet', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { startDate, endDate } = req.query;
+    const connection = await pool.getConnection();
+    let query = `
+      SELECT te.*
+      FROM timesheet_entries te
+      WHERE te.user_id = ?
+    `;
+    const params: any[] = [userId];
+    if (startDate && endDate) {
+      query += ' AND te.entry_date BETWEEN ? AND ?';
+      params.push(startDate, endDate);
+    }
+    query += ' ORDER BY te.entry_date DESC, te.start_time DESC';
+    const [rows] = await connection.execute(query, params);
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching timesheet entries:', error);
+    res.status(500).json({ error: 'Failed to fetch timesheet entries' });
+  }
+});
+
+app.post('/api/timesheet', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      entry_date,
+      start_time,
+      end_time,
+      description,
+      category,
+      case_id,
+      contract_id,
+      hours
+    } = req.body;
+
+    if (!entry_date || !start_time || !end_time || !category || !hours) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const id = generateUUID();
+    const connection = await pool.getConnection();
+    await connection.execute(
+      `INSERT INTO timesheet_entries 
+        (id, user_id, entry_date, start_time, end_time, description, category, case_id, contract_id, hours)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, userId, entry_date, start_time, end_time, description || null, category, case_id || null, contract_id || null, hours]
+    );
+
+    const [rows] = await connection.execute('SELECT * FROM timesheet_entries WHERE id = ?', [id]);
+    connection.release();
+    res.status(201).json((rows as any[])[0]);
+  } catch (error) {
+    console.error('Error creating timesheet entry:', error);
+    res.status(500).json({ error: 'Failed to create timesheet entry' });
+  }
+});
+
+// ===== LAW FIRM API ENDPOINTS =====
+app.get('/api/law-firms', authenticateToken, async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.execute(`
+      SELECT * FROM law_firms 
+      WHERE status = 'active'
+      ORDER BY firm_type DESC, name ASC
+    `);
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching law firms:', error);
+    res.status(500).json({ error: 'Failed to fetch law firms' });
+  }
+});
+
+app.get('/api/law-firms/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    const [rows] = await connection.execute(
+      'SELECT * FROM law_firms WHERE id = ?',
+      [id]
+    );
+    connection.release();
+    
+    if ((rows as any[]).length === 0) {
+      return res.status(404).json({ error: 'Law firm not found' });
+    }
+    
+    res.json((rows as any[])[0]);
+  } catch (error) {
+    console.error('Error fetching law firm:', error);
+    res.status(500).json({ error: 'Failed to fetch law firm' });
+  }
+});
+
+app.post('/api/law-firms', authenticateToken, async (req, res) => {
+  try {
+    const {
+      name,
+      firm_type,
+      address,
+      city,
+      state,
+      country,
+      postal_code,
+      contact_person,
+      email,
+      phone,
+      website,
+      specializations,
+      bar_number,
+      status
+    } = req.body;
+
+    if (!name || !firm_type) {
+      return res.status(400).json({ error: 'Name and firm type are required' });
+    }
+
+    const lawFirmId = generateUUID();
+    const connection = await pool.getConnection();
+    
+    await connection.execute(`
+      INSERT INTO law_firms (
+        id, name, firm_type, address, city, state, country, postal_code,
+        contact_person, email, phone, website, specializations, bar_number, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      lawFirmId, name, firm_type, address || null, city || null, state || null, country || null, postal_code || null,
+      contact_person || null, email || null, phone || null, website || null, specializations || null, bar_number || null, status || 'active'
+    ]);
+
+    // Fetch the created law firm
+    const [rows] = await connection.execute(
+      'SELECT * FROM law_firms WHERE id = ?',
+      [lawFirmId]
+    );
+    
+    connection.release();
+    res.status(201).json((rows as any[])[0]);
+  } catch (error) {
+    console.error('Error creating law firm:', error);
+    res.status(500).json({ error: 'Failed to create law firm' });
+  }
+});
+
+app.put('/api/law-firms/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      firm_type,
+      address,
+      city,
+      state,
+      country,
+      postal_code,
+      contact_person,
+      email,
+      phone,
+      website,
+      specializations,
+      bar_number,
+      status
+    } = req.body;
+
+    const connection = await pool.getConnection();
+    
+    // Check if law firm exists
+    const [existingRows] = await connection.execute(
+      'SELECT id FROM law_firms WHERE id = ?',
+      [id]
+    );
+    
+    if ((existingRows as any[]).length === 0) {
+      connection.release();
+      return res.status(404).json({ error: 'Law firm not found' });
+    }
+
+    await connection.execute(`
+      UPDATE law_firms SET
+        name = COALESCE(?, name),
+        firm_type = COALESCE(?, firm_type),
+        address = COALESCE(?, address),
+        city = COALESCE(?, city),
+        state = COALESCE(?, state),
+        country = COALESCE(?, country),
+        postal_code = COALESCE(?, postal_code),
+        contact_person = COALESCE(?, contact_person),
+        email = COALESCE(?, email),
+        phone = COALESCE(?, phone),
+        website = COALESCE(?, website),
+        specializations = COALESCE(?, specializations),
+        bar_number = COALESCE(?, bar_number),
+        status = COALESCE(?, status),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      name || null, firm_type || null, address || null, city || null, state || null, country || null, postal_code || null,
+      contact_person || null, email || null, phone || null, website || null, specializations || null, bar_number || null, status || null, id
+    ]);
+
+    // Fetch the updated law firm
+    const [rows] = await connection.execute(
+      'SELECT * FROM law_firms WHERE id = ?',
+      [id]
+    );
+    
+    connection.release();
+    res.json((rows as any[])[0]);
+  } catch (error) {
+    console.error('Error updating law firm:', error);
+    res.status(500).json({ error: 'Failed to update law firm' });
+  }
+});
+
+app.delete('/api/law-firms/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    
+    // Check if law firm exists
+    const [existingRows] = await connection.execute(
+      'SELECT id FROM law_firms WHERE id = ?',
+      [id]
+    );
+    
+    if ((existingRows as any[]).length === 0) {
+      connection.release();
+      return res.status(404).json({ error: 'Law firm not found' });
+    }
+
+    // Soft delete by setting status to inactive
+    await connection.execute(
+      'UPDATE law_firms SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['inactive', id]
+    );
+    
+    connection.release();
+    res.json({ message: 'Law firm deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting law firm:', error);
+    res.status(500).json({ error: 'Failed to delete law firm' });
+  }
+});
+
+// Get contracts assigned to a law firm
+app.get('/api/law-firms/:id/contracts', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    
+    // Check if law firm exists
+    const [lawFirmRows] = await connection.execute(
+      'SELECT id, name FROM law_firms WHERE id = ? AND status = ?',
+      [id, 'active']
+    );
+    
+    if ((lawFirmRows as any[]).length === 0) {
+      connection.release();
+      return res.status(404).json({ error: 'Law firm not found' });
+    }
+    
+    // Since there's no direct relationship between contracts and cases in the current schema,
+    // we'll return contracts from the same department as cases assigned to this law firm
+    const [contractRows] = await connection.execute(`
+      SELECT DISTINCT 
+        c.id,
+        c.contract_number,
+        c.title,
+        c.description,
+        c.start_date,
+        c.end_date,
+        c.status,
+        c.value,
+        c.currency,
+        c.payment_terms,
+        c.created_at,
+        c.updated_at,
+        v.name as vendor_name,
+        ct.name as contract_type_name,
+        d.name as department_name
+      FROM contracts c
+      LEFT JOIN vendors v ON c.vendor_id = v.id
+      LEFT JOIN contract_types ct ON c.contract_type_id = ct.id
+      LEFT JOIN departments d ON c.department_id = d.id
+      WHERE c.department_id IN (
+        SELECT DISTINCT department_id 
+        FROM cases 
+        WHERE law_firm_id = ? AND department_id IS NOT NULL
+      )
+      ORDER BY c.created_at DESC
+    `, [id]);
+    
+    connection.release();
+    res.json(contractRows);
+  } catch (error) {
+    console.error('Error fetching contracts for law firm:', error);
+    res.status(500).json({ error: 'Failed to fetch contracts for law firm' });
+  }
+});
+
+// Get cases assigned to a law firm
+app.get('/api/law-firms/:id/cases', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const connection = await pool.getConnection();
+    
+    // Check if law firm exists
+    const [lawFirmRows] = await connection.execute(
+      'SELECT id, name FROM law_firms WHERE id = ? AND status = ?',
+      [id, 'active']
+    );
+    
+    if ((lawFirmRows as any[]).length === 0) {
+      connection.release();
+      return res.status(404).json({ error: 'Law firm not found' });
+    }
+    
+    // Get cases assigned to this law firm
+    const [caseRows] = await connection.execute(`
+      SELECT 
+        c.id,
+        c.case_number,
+        c.case_name as title,
+        c.description,
+        c.case_type,
+        c.status,
+        c.priority,
+        c.filing_date,
+        c.court_name,
+        c.court_case_number,
+        c.estimated_completion_date,
+        c.actual_completion_date,
+        c.client_name,
+        c.judge_name,
+        c.opposing_counsel,
+        c.estimated_value,
+        c.notes,
+        c.created_at,
+        c.updated_at,
+        d.name as department_name
+      FROM cases c
+      LEFT JOIN departments d ON c.department_id = d.id
+      WHERE c.law_firm_id = ?
+      ORDER BY c.created_at DESC
+    `, [id]);
+    
+    connection.release();
+    res.json(caseRows);
+  } catch (error) {
+    console.error('Error fetching cases for law firm:', error);
+    res.status(500).json({ error: 'Failed to fetch cases for law firm' });
   }
 });
 

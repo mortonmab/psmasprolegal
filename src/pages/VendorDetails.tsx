@@ -39,21 +39,25 @@ interface VendorContract {
 }
 
 interface VendorDetails {
-  id: number;
+  id: string;
   name: string;
-  type: string;
+  company_type: string;
   status: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
-  address: string;
-  website: string;
-  taxId: string;
-  registrationDate: string;
-  industry: string;
-  description: string;
-  contacts: VendorContact[];
-  contracts: VendorContract[];
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  website?: string;
+  vat_number?: string;
+  tin_number?: string;
+  created_at: string;
+  updated_at: string;
+  contacts?: VendorContact[];
+  contracts?: VendorContract[];
 }
 
 export function VendorDetails() {
@@ -73,10 +77,16 @@ export function VendorDetails() {
   }, [id]);
 
   const loadVendorDetails = async () => {
+    if (!id) {
+      setError('Vendor ID is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      const vendor = await vendorService.getVendorById(Number(id));
+      const vendor = await vendorService.getVendorById(id);
       setVendorDetails(vendor);
     } catch (err) {
       console.error('Error loading vendor details:', err);
@@ -174,12 +184,17 @@ export function VendorDetails() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Type</label>
-                            <input
-                              type="text"
-                              defaultValue={vendorDetails.type}
+                            <label className="block text-sm font-medium text-gray-700">Company Type</label>
+                            <select
+                              defaultValue={vendorDetails.company_type}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                            />
+                            >
+                              <option value="corporation">Corporation</option>
+                              <option value="partnership">Partnership</option>
+                              <option value="individual">Individual</option>
+                              <option value="government">Government</option>
+                              <option value="other">Other</option>
+                            </select>
                           </div>
                           {/* Add more form fields */}
                         </div>
@@ -209,8 +224,8 @@ export function VendorDetails() {
                             <p className="mt-1 text-sm text-gray-900">{vendorDetails.name}</p>
                           </div>
                           <div>
-                            <h3 className="text-sm font-medium text-gray-500">Type</h3>
-                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.type}</p>
+                            <h3 className="text-sm font-medium text-gray-500">Company Type</h3>
+                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.company_type}</p>
                           </div>
                           <div>
                             <h3 className="text-sm font-medium text-gray-500">Status</h3>
@@ -221,53 +236,69 @@ export function VendorDetails() {
                             </span>
                           </div>
                           <div>
-                            <h3 className="text-sm font-medium text-gray-500">Industry</h3>
-                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.industry}</p>
+                            <h3 className="text-sm font-medium text-gray-500">Contact Person</h3>
+                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.contact_person || 'Not specified'}</p>
                           </div>
                           <div>
-                            <h3 className="text-sm font-medium text-gray-500">Tax ID</h3>
-                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.taxId}</p>
+                            <h3 className="text-sm font-medium text-gray-500">VAT Number</h3>
+                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.vat_number || 'Not specified'}</p>
                           </div>
                           <div>
-                            <h3 className="text-sm font-medium text-gray-500">Registration Date</h3>
-                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.registrationDate}</p>
+                            <h3 className="text-sm font-medium text-gray-500">TIN Number</h3>
+                            <p className="mt-1 text-sm text-gray-900">{vendorDetails.tin_number || 'Not specified'}</p>
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-500">Created Date</h3>
+                            <p className="mt-1 text-sm text-gray-900">{new Date(vendorDetails.created_at).toLocaleDateString()}</p>
                           </div>
                         </div>
 
                         <div className="mt-6">
                           <h3 className="text-sm font-medium text-gray-500 mb-3">Contact Information</h3>
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                              <div className="flex items-center text-sm text-gray-500">
-                                <Mail className="h-4 w-4 mr-2" />
-                                {vendorDetails.email}
+                            {vendorDetails.email && (
+                              <div>
+                                <div className="flex items-center text-sm text-gray-500">
+                                  <Mail className="h-4 w-4 mr-2" />
+                                  {vendorDetails.email}
+                                </div>
                               </div>
-                            </div>
-                            <div>
-                              <div className="flex items-center text-sm text-gray-500">
-                                <Phone className="h-4 w-4 mr-2" />
-                                {vendorDetails.phone}
+                            )}
+                            {vendorDetails.phone && (
+                              <div>
+                                <div className="flex items-center text-sm text-gray-500">
+                                  <Phone className="h-4 w-4 mr-2" />
+                                  {vendorDetails.phone}
+                                </div>
                               </div>
-                            </div>
-                            <div>
-                              <div className="flex items-center text-sm text-gray-500">
-                                <MapPin className="h-4 w-4 mr-2" />
-                                {vendorDetails.address}
+                            )}
+                            {(vendorDetails.address || vendorDetails.city || vendorDetails.state) && (
+                              <div>
+                                <div className="flex items-center text-sm text-gray-500">
+                                  <MapPin className="h-4 w-4 mr-2" />
+                                  {[vendorDetails.address, vendorDetails.city, vendorDetails.state, vendorDetails.country].filter(Boolean).join(', ') || 'Not specified'}
+                                </div>
                               </div>
-                            </div>
-                            <div>
-                              <div className="flex items-center text-sm text-gray-500">
-                                <Globe className="h-4 w-4 mr-2" />
-                                {vendorDetails.website}
+                            )}
+                            {vendorDetails.website && (
+                              <div>
+                                <div className="flex items-center text-sm text-gray-500">
+                                  <Globe className="h-4 w-4 mr-2" />
+                                  <a href={vendorDetails.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-500">
+                                    {vendorDetails.website}
+                                  </a>
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </div>
                         </div>
 
+                        {/* Description field - not available in current vendor schema
                         <div className="mt-6">
                           <h3 className="text-sm font-medium text-gray-500 mb-3">Description</h3>
-                          <p className="text-sm text-gray-900">{vendorDetails.description}</p>
+                          <p className="text-sm text-gray-900">{vendorDetails.description || 'No description available'}</p>
                         </div>
+                        */}
                       </>
                     )}
                   </div>
@@ -310,7 +341,7 @@ export function VendorDetails() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {vendorDetails.contracts.map((contract) => (
+                        {vendorDetails.contracts?.map((contract) => (
                           <tr 
                             key={contract.id}
                             className="hover:bg-gray-50 cursor-pointer"
@@ -336,7 +367,13 @@ export function VendorDetails() {
                               {contract.value}
                             </td>
                           </tr>
-                        ))}
+                        )) || (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                              No contracts found for this vendor
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -357,7 +394,7 @@ export function VendorDetails() {
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {vendorDetails.contacts.map((contact) => (
+                {vendorDetails.contacts?.map((contact) => (
                   <div
                     key={contact.id}
                     className="relative rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm flex items-center space-x-3 hover:border-gray-400"
@@ -378,7 +415,11 @@ export function VendorDetails() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )) || (
+                  <div className="col-span-2 text-center py-8 text-sm text-gray-500">
+                    No contact persons found for this vendor
+                  </div>
+                )}
               </div>
             </div>
           </div>

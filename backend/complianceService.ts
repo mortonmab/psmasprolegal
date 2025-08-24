@@ -99,7 +99,7 @@ export class ComplianceService {
       let nextRunDate = null;
       if (isRecurring && recurringDay) {
         const startDate = new Date(data.startDate);
-        nextRunDate = calculateNextRunDate(data.frequency, recurringDay, startDate);
+        nextRunDate = ComplianceService.calculateNextRunDate(data.frequency, recurringDay, startDate);
       }
 
       // Create compliance run
@@ -381,6 +381,7 @@ export class ComplianceService {
     }>
   ): Promise<boolean> {
     const connection = await pool.getConnection();
+    let recipient: any = null;
     
     try {
       await connection.beginTransaction();
@@ -397,7 +398,7 @@ export class ComplianceService {
         throw new Error('Invalid survey token');
       }
 
-      const recipient = recipients[0];
+      recipient = recipients[0];
 
       // Check if survey has already been completed
       if (recipient.survey_completed) {
@@ -707,7 +708,7 @@ export class ComplianceService {
         [runId, runId]
       );
 
-      const stats = statsRows[0] as any;
+      const stats = (statsRows as any[])[0] || {};
       const completionRate = stats.total_recipients > 0 ? (stats.total_responses / stats.total_recipients) * 100 : 0;
 
       return {

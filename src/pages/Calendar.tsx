@@ -9,11 +9,21 @@ import {
   Trash2,
   MoreVertical,
   Eye,
-  X
+  X,
+  User,
+  Mail,
+  Download,
+  Calendar as CalendarIcon,
+  FileText
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addDays } from 'date-fns';
-import { CalendarService, CalendarEvent } from '../services/calendarService';
+import { CalendarService, CalendarEvent, EventAttendee } from '../services/calendarService';
 import { EventModal } from '../components/EventModal';
+import { TimeEntryModal } from '../components/TimeEntryModal';
+import { TimesheetService, TimesheetEntry } from '../services/timesheetService';
+import { caseService } from '../services/caseService';
+import { contractService } from '../services/contractService';
+import type { Case, Contract } from '../lib/types';
 import { useAuth } from '../hooks/useAuth';
 
 interface TimeEntry {
@@ -24,12 +34,13 @@ interface TimeEntry {
   description: string;
   category: 'Case Work' | 'Client Meeting' | 'Court Appearance' | 'Research' | 'Administrative' | 'Other';
   caseNumber?: string;
-  billable: boolean;
+  contractNumber?: string;
   hours: number;
 }
 
 export function Calendar() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'calendar' | 'timesheet'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -38,33 +49,13 @@ export function Calendar() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | undefined>();
   const [selectedEventForView, setSelectedEventForView] = useState<CalendarEvent | null>(null);
   const [showEventDetails, setShowEventDetails] = useState(false);
+  const [attendeesForView, setAttendeesForView] = useState<EventAttendee[]>([]);
+  const [attendeesLoading, setAttendeesLoading] = useState(false);
 
   // Timesheet state
   const [selectedWeek, setSelectedWeek] = useState(new Date());
-  const [timeEntries] = useState<TimeEntry[]>([
-    {
-      id: 1,
-      date: '2024-03-18',
-      startTime: '09:00',
-      endTime: '11:00',
-      description: 'Case review and documentation',
-      category: 'Case Work',
-      caseNumber: 'CASE-2024-001',
-      billable: true,
-      hours: 2
-    },
-    {
-      id: 2,
-      date: '2024-03-18',
-      startTime: '14:00',
-      endTime: '16:00',
-      description: 'Client consultation',
-      category: 'Client Meeting',
-      caseNumber: 'CASE-2024-002',
-      billable: true,
-      hours: 2
-    }
-  ]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [showTimeEntryModal, setShowTimeEntryModal] = useState(false);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -127,39 +118,258 @@ export function Calendar() {
     }
   };
 
-  const handleViewEvent = (event: CalendarEvent) => {
+  const handleViewEvent = async (event: CalendarEvent) => {
     setSelectedEventForView(event);
     setShowEventDetails(true);
+    setAttendeesLoading(true);
+    setAttendeesForView([]);
+    try {
+      const response = await CalendarService.getEvent(event.id);
+      setAttendeesForView(response.attendees || []);
+    } catch (error) {
+      console.error('Error loading event attendees:', error);
+      setAttendeesForView([]);
+    } finally {
+      setAttendeesLoading(false);
+    }
+  };
+
+  const getViewerAttendeeName = (attendee: EventAttendee) => {
+    return attendee.user_full_name || attendee.external_name || 'Unknown';
+  };
+
+  const getViewerAttendeeEmail = (attendee: EventAttendee) => {
+    return attendee.user_email || attendee.external_email || '';
   };
 
   const handleEventSaved = () => {
     loadEvents();
   };
 
-  return (
-    <div className="space-y-8">
+  // Load time entries for the selected week
+  useEffect(() => {
+    const loadTimeEntriesForWeek = async () => {
+      const start = new Date(selectedWeek);
+      const end = new Date(selectedWeek);
+      start.setDate(start.getDate() - start.getDay());
+      end.setDate(start.getDate() + 6);
+      const startStr = start.toISOString().split('T')[0];
+      const endStr = end.toISOString().split('T')[0];
+      try {
+        const [rows, cases, contracts]: [TimesheetEntry[], Case[], Contract[]] = await Promise.all([
+          TimesheetService.getEntries(startStr, endStr),
+          caseService.getAllCases(),
+          contractService.getAllContracts()
+        ]);
+        
+        const mapped: TimeEntry[] = rows.map(r => {
+          const relatedCase = cases.find(c => c.id === r.case_id);
+          const relatedContract = contracts.find(c => c.id === r.contract_id);
+          
+          return {
+            id: Math.random(),
+            date: r.entry_date,
+            startTime: r.start_time,
+            endTime: r.end_time,
+            description: r.description || '',
+            category: r.category as TimeEntry['category'],
+            caseNumber: relatedCase ? `${relatedCase.case_number} - ${relatedCase.case_name}` : undefined,
+            contractNumber: relatedContract ? `${relatedContract.contract_number} - ${relatedContract.title}` : undefined,
+            hours: Number(r.hours)
+          };
+        });
+        setTimeEntries(mapped);
+      } catch (e) {
+        console.error('Failed to load time entries:', e);
+      }
+    };
+    loadTimeEntriesForWeek();
+  }, [selectedWeek]);
+
+  const exportTimesheet = (format: 'csv' | 'pdf') => {
+    if (timeEntries.length === 0) {
+      alert('No timesheet entries to export');
+      return;
+    }
+
+    if (format === 'csv') {
+      exportToCSV();
+    } else {
+      exportToPDF();
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Date', 'Start Time', 'End Time', 'Category', 'Description', 'Case', 'Contract', 'Hours'];
+    const csvContent = [
+      headers.join(','),
+      ...timeEntries.map(entry => [
+        entry.date,
+        entry.startTime,
+        entry.endTime,
+        `"${entry.category}"`,
+        `"${entry.description || ''}"`,
+        `"${entry.caseNumber || ''}"`,
+        `"${entry.contractNumber || ''}"`,
+        entry.hours
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `timesheet-${format(selectedWeek, 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToPDF = () => {
+    // Create a simple HTML table for printing
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const totalHours = timeEntries.reduce((sum, entry) => sum + entry.hours, 0);
+    const weekStart = new Date(selectedWeek);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Timesheet - Week of ${format(weekStart, 'MMM d, yyyy')}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #333; text-align: center; }
+            .header { text-align: center; margin-bottom: 30px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            .total-row { background-color: #f9f9f9; font-weight: bold; }
+            .user-info { margin-bottom: 20px; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>Timesheet Report</h1>
+          <div class="header">
+            <div class="user-info">
+              <strong>User:</strong> ${user?.full_name || 'Unknown User'}<br>
+              <strong>Week:</strong> ${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}<br>
+              <strong>Generated:</strong> ${format(new Date(), 'MMM d, yyyy HH:mm')}
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Case</th>
+                <th>Contract</th>
+                <th>Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${timeEntries.map(entry => `
+                <tr>
+                  <td>${format(new Date(entry.date), 'MMM d, yyyy')}</td>
+                  <td>${entry.startTime} - ${entry.endTime}</td>
+                  <td>${entry.category}</td>
+                  <td>${entry.description || ''}</td>
+                  <td>${entry.caseNumber || ''}</td>
+                  <td>${entry.contractNumber || ''}</td>
+                  <td>${entry.hours}</td>
+                </tr>
+              `).join('')}
+              <tr class="total-row">
+                <td colspan="6"><strong>Total Hours</strong></td>
+                <td><strong>${totalHours}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
+  return (<>
+    <div className="space-y-6">
       {/* Header */}
       <div className="sm:flex sm:items-center sm:justify-between">
         <div className="sm:flex-auto">
-          <h1 className="text-2xl font-semibold text-gray-900">Calendar</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Calendar & Timesheet</h1>
           <p className="mt-2 text-sm text-gray-700">
-            View and manage all your court dates, meetings, and deadlines.
+            Manage your calendar events and track your time.
           </p>
         </div>
         <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-          <button
-            type="button"
-            onClick={handleCreateEvent}
-            className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add event
-          </button>
+          {activeTab === 'calendar' ? (
+            <button
+              type="button"
+              onClick={handleCreateEvent}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Event
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowTimeEntryModal(true)}
+              className="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Time Entry
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Calendar Section */}
-      {loading ? (
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('calendar')}
+            className={`${
+              activeTab === 'calendar'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <CalendarIcon className="h-4 w-4 mr-2" />
+            Calendar
+          </button>
+          <button
+            onClick={() => setActiveTab('timesheet')}
+            className={`${
+              activeTab === 'timesheet'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Timesheet
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'calendar' && (
+        <>
+          {/* Calendar Section */}
+          {loading ? (
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -357,7 +567,10 @@ export function Calendar() {
             <div className="flex items-center justify-between p-6 border-b">
               <h2 className="text-xl font-semibold text-gray-900">Event Details</h2>
               <button
-                onClick={() => setShowEventDetails(false)}
+                onClick={() => {
+                  setShowEventDetails(false);
+                  setAttendeesForView([]);
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="h-6 w-6" />
@@ -395,6 +608,33 @@ export function Calendar() {
                   }`}>
                     {selectedEventForView.priority}
                   </span>
+                </div>
+
+                <div className="pt-3">
+                  <h4 className="text-sm font-medium text-gray-900">Participants</h4>
+                  {attendeesLoading ? (
+                    <p className="text-sm text-gray-500 mt-2">Loading attendees...</p>
+                  ) : attendeesForView.length > 0 ? (
+                    <div className="mt-2 space-y-2">
+                      {attendeesForView.map((attendee) => (
+                        <div key={attendee.id} className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 text-gray-400 mr-2" />
+                            <div>
+                              <p className="text-sm text-gray-900">{getViewerAttendeeName(attendee)}</p>
+                              <p className="text-xs text-gray-500 flex items-center">
+                                <Mail className="h-3 w-3 mr-1" />
+                                {getViewerAttendeeEmail(attendee) || '—'}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-500 capitalize">{attendee.role}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 mt-2">No attendees</p>
+                  )}
                 </div>
               </div>
               
@@ -443,51 +683,51 @@ export function Calendar() {
         event={selectedEvent}
         selectedDate={selectedDate || undefined}
       />
+        </>
+      )}
 
-      {/* Visual separator */}
-      <div className="border-t border-gray-200 my-8"></div>
-
-      {/* Timesheet Section */}
+      {activeTab === 'timesheet' && (
+        <>
+          {/* Timesheet Section */}
       <div>
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            {/* Timesheet Header */}
+            {/* Timesheet Controls */}
             <div className="sm:flex sm:items-center sm:justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900">Timesheet</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  Track and manage your billable hours and activities
-                </p>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setSelectedWeek(addDays(selectedWeek, -7))}
+                  className="p-2 text-gray-400 hover:text-gray-500"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <span className="text-lg font-medium text-gray-900">
+                  Week of {format(selectedWeek, 'MMM d, yyyy')}
+                </span>
+                <button
+                  onClick={() => setSelectedWeek(addDays(selectedWeek, 7))}
+                  className="p-2 text-gray-400 hover:text-gray-500"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
               </div>
               <div className="mt-4 sm:mt-0 flex items-center space-x-3">
-                <div className="flex items-center space-x-2">
+                <div className="flex space-x-2">
                   <button
-                    onClick={() => setSelectedWeek(addDays(selectedWeek, -7))}
-                    className="p-2 text-gray-400 hover:text-gray-500"
+                    onClick={() => exportTimesheet('csv')}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
-                    <ChevronLeft className="h-5 w-5" />
+                    <Download className="h-4 w-4 mr-2" />
+                    Export CSV
                   </button>
-                  <span className="text-sm font-medium text-gray-900">
-                    Week of {format(selectedWeek, 'MMM d, yyyy')}
-                  </span>
                   <button
-                    onClick={() => setSelectedWeek(addDays(selectedWeek, 7))}
-                    className="p-2 text-gray-400 hover:text-gray-500"
+                    onClick={() => exportTimesheet('pdf')}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
-                    <ChevronRight className="h-5 w-5" />
+                    <Download className="h-4 w-4 mr-2" />
+                    Export PDF
                   </button>
                 </div>
-                <button
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Time Entry
-                </button>
-                <button
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  Submit Timesheet
-                </button>
               </div>
             </div>
 
@@ -501,9 +741,9 @@ export function Calendar() {
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Time</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Category</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Case Number</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Case</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Contract</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Hours</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Billable</th>
                       <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
                         <span className="sr-only">Actions</span>
                       </th>
@@ -527,15 +767,11 @@ export function Calendar() {
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {entry.caseNumber}
                         </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {entry.contractNumber}
+                        </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
                           {entry.hours}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            entry.billable ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {entry.billable ? 'Yes' : 'No'}
-                          </span>
                         </td>
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                           <button className="text-gray-400 hover:text-gray-500">
@@ -547,21 +783,68 @@ export function Calendar() {
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <th scope="row" colSpan={5} className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">
+                      <th scope="row" colSpan={6} className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">
                         Total Hours
                       </th>
                       <td className="whitespace-nowrap px-3 py-3.5 text-sm font-semibold text-gray-900">
                         {timeEntries.reduce((sum, entry) => sum + entry.hours, 0)}
                       </td>
-                      <td colSpan={2}></td>
+                      <td colSpan={1}></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
           </div>
+          </div>
         </div>
-      </div>
+        </>
+      )}
     </div>
-  );
+
+    {/* Modals - Available from both tabs */}
+    <TimeEntryModal
+      isOpen={showTimeEntryModal}
+      onClose={() => setShowTimeEntryModal(false)}
+      onSaved={async () => {
+        // reload entries for the selected week range
+        const start = new Date(selectedWeek);
+        const end = new Date(selectedWeek);
+        start.setDate(start.getDate() - start.getDay());
+        end.setDate(start.getDate() + 6);
+        const startStr = start.toISOString().split('T')[0];
+        const endStr = end.toISOString().split('T')[0];
+        try {
+          const [rows, cases, contracts]: [TimesheetEntry[], Case[], Contract[]] = await Promise.all([
+            TimesheetService.getEntries(startStr, endStr),
+            caseService.getAllCases(),
+            contractService.getAllContracts()
+          ]);
+          
+          const mapped: TimeEntry[] = rows.map(r => {
+            const relatedCase = cases.find(c => c.id === r.case_id);
+            const relatedContract = contracts.find(c => c.id === r.contract_id);
+            
+            return {
+              id: Math.random(),
+              date: r.entry_date,
+              startTime: r.start_time,
+              endTime: r.end_time,
+              description: r.description || '',
+              category: r.category as TimeEntry['category'],
+              caseNumber: relatedCase ? `${relatedCase.case_number} - ${relatedCase.case_name}` : undefined,
+              contractNumber: relatedContract ? `${relatedContract.contract_number} - ${relatedContract.title}` : undefined,
+              hours: Number(r.hours)
+            };
+          });
+          setTimeEntries(mapped);
+        } catch (e) {
+          console.error('Failed to load time entries:', e);
+        }
+      }}
+      defaultDate={selectedDate || selectedWeek}
+    />
+  </>);
 }
+
+export default Calendar;

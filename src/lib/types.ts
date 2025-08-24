@@ -52,6 +52,7 @@ export type Case = {
   actual_completion_date?: string;
   assigned_members?: string;
   department_id?: string;
+  law_firm_id?: string;
   client_name?: string;
   judge_name?: string;
   opposing_counsel?: string;
@@ -100,6 +101,26 @@ export type Vendor = {
   phone?: string;
   website?: string;
   status: 'active' | 'inactive' | 'blacklisted';
+  created_at: string;
+  updated_at: string;
+};
+
+export type LawFirm = {
+  id: string;
+  name: string;
+  firm_type: 'in_house' | 'external';
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  specializations?: string;
+  bar_number?: string;
+  status: 'active' | 'inactive';
   created_at: string;
   updated_at: string;
 };

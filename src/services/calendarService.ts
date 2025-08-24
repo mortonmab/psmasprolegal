@@ -85,7 +85,7 @@ export class CalendarService {
     if (endDate) params.append('endDate', endDate);
     
     const response = await apiService.get(`/calendar/events?${params.toString()}`);
-    return response.data;
+    return response;
   }
 
   /**
@@ -93,7 +93,7 @@ export class CalendarService {
    */
   static async getEvent(eventId: string): Promise<{ event: CalendarEvent; attendees: EventAttendee[] }> {
     const response = await apiService.get(`/calendar/events/${eventId}`);
-    return response.data;
+    return response;
   }
 
   /**
@@ -101,7 +101,7 @@ export class CalendarService {
    */
   static async createEvent(eventData: CreateEventData): Promise<CalendarEvent> {
     const response = await apiService.post('/calendar/events', eventData);
-    return response.data;
+    return response;
   }
 
   /**
@@ -109,7 +109,7 @@ export class CalendarService {
    */
   static async updateEvent(eventId: string, updateData: UpdateEventData): Promise<CalendarEvent> {
     const response = await apiService.put(`/calendar/events/${eventId}`, updateData);
-    return response.data;
+    return response;
   }
 
   /**
@@ -137,7 +137,7 @@ export class CalendarService {
    */
   static async getUpcomingEvents(days: number = 7): Promise<CalendarEvent[]> {
     const response = await apiService.get(`/calendar/upcoming?days=${days}`);
-    return response.data;
+    return response;
   }
 
   /**

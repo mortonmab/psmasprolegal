@@ -8,7 +8,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Download,
+  FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NewContractModal } from '../components/NewContractModal';
@@ -29,6 +31,7 @@ export function Contracts() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [currentTab, setCurrentTab] = useState<'active' | 'expired'>('active');
   const [isNewContractOpen, setIsNewContractOpen] = useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractTypes, setContractTypes] = useState<ContractType[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -65,6 +68,181 @@ export function Contracts() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Handle click outside to close export dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isExportDropdownOpen) {
+        const target = event.target as Element;
+        if (!target.closest('.relative.inline-block.text-left')) {
+          setIsExportDropdownOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isExportDropdownOpen]);
+
+  // Export functions
+  const exportToCsv = () => {
+    const headers = [
+      'Contract Number',
+      'Title',
+      'Vendor',
+      'Department',
+      'Contract Type',
+      'Status',
+      'Start Date',
+      'End Date',
+      'Value',
+      'Currency',
+      'Payment Terms',
+      'Created Date',
+      'Updated Date'
+    ];
+
+    const csvData = filteredContracts.map(contract => [
+      contract.contract_number || '',
+      contract.title || '',
+      getVendorName(contract.vendor_id) || '',
+      getDepartmentName(contract.department_id) || '',
+      getContractTypeName(contract.contract_type_id) || '',
+      contract.status || '',
+      contract.start_date ? new Date(contract.start_date).toLocaleDateString() : '',
+      contract.end_date ? new Date(contract.end_date).toLocaleDateString() : '',
+      contract.value || '',
+      contract.currency || '',
+      contract.payment_terms || '',
+      new Date(contract.created_at).toLocaleDateString(),
+      new Date(contract.updated_at).toLocaleDateString()
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => 
+        row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `contracts-export-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToPdf = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups to export PDF');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Contracts Export - ${new Date().toLocaleDateString()}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #1f2937; margin-bottom: 20px; }
+            .export-info { margin-bottom: 20px; color: #6b7280; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f9fafb; font-weight: bold; }
+            tr:nth-child(even) { background-color: #f9fafb; }
+            .status-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+            .status-active { background-color: #d1fae5; color: #065f46; }
+            .status-expired { background-color: #fee2e2; color: #991b1b; }
+            .status-draft { background-color: #f3f4f6; color: #374151; }
+            .status-terminated { background-color: #fef3c7; color: #92400e; }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Contracts Export Report</h1>
+          <div class="export-info">
+            <p><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</p>
+            <p><strong>Total Contracts:</strong> ${filteredContracts.length}</p>
+            <p><strong>Filter Applied:</strong> ${currentTab === 'active' ? 'Active Contracts' : 'Expired Contracts'}</p>
+            ${searchQuery ? `<p><strong>Search Query:</strong> "${searchQuery}"</p>` : ''}
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Contract Number</th>
+                <th>Title</th>
+                <th>Vendor</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th>Value</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredContracts.map(contract => `
+                <tr>
+                  <td>${contract.contract_number || ''}</td>
+                  <td>${contract.title || ''}</td>
+                  <td>${getVendorName(contract.vendor_id) || ''}</td>
+                  <td>${getContractTypeName(contract.contract_type_id) || ''}</td>
+                  <td><span class="status-badge status-${contract.status}">${contract.status || ''}</span></td>
+                  <td>${contract.start_date ? new Date(contract.start_date).toLocaleDateString() : ''}</td>
+                  <td>${contract.end_date ? new Date(contract.end_date).toLocaleDateString() : ''}</td>
+                  <td>${contract.value ? `${contract.currency || ''} ${contract.value}` : ''}</td>
+                  <td>${new Date(contract.created_at).toLocaleDateString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              }
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  // Helper functions for export
+  const getVendorName = (vendorId?: string) => {
+    if (!vendorId) return '';
+    const vendor = vendors.find(v => v.id === vendorId);
+    return vendor?.name || '';
+  };
+
+  const getDepartmentName = (departmentId?: string) => {
+    if (!departmentId) return '';
+    const department = departments.find(d => d.id === departmentId);
+    return department?.name || '';
+  };
+
+  const getContractTypeName = (contractTypeId?: string) => {
+    if (!contractTypeId) return '';
+    const contractType = contractTypes.find(ct => ct.id === contractTypeId);
+    return contractType?.name || '';
+  };
 
   // Quick stats
   const quickStats = [
@@ -272,7 +450,101 @@ export function Contracts() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <div className="mt-4 sm:mt-0 sm:ml-4 flex items-center space-x-4">
+          {/* Export Dropdown */}
+          <div className="relative inline-block text-left">
+            <button
+              type="button"
+              className="group inline-flex items-center px-4 py-2.5 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:scale-105"
+              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+            >
+              <Download className="h-4 w-4 mr-2 group-hover:animate-bounce" />
+              <span className="mr-2">Export</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 group-hover:bg-white group-hover:text-blue-700 transition-colors duration-200">
+                {filteredContracts.length}
+              </span>
+              <svg 
+                className={`-mr-1 ml-2 h-4 w-4 transition-transform duration-200 ${isExportDropdownOpen ? 'rotate-180' : ''}`} 
+                xmlns="http://www.w3.org/2000/svg" 
+                viewBox="0 0 20 20" 
+                fill="currentColor"
+              >
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+            
+            {isExportDropdownOpen && (
+              <div className="absolute right-0 z-20 mt-3 w-64 origin-top-right">
+                <div className="rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 backdrop-blur-sm border border-gray-100 overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Export Data</h3>
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700">
+                        {filteredContracts.length} contracts
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Choose your preferred format</p>
+                  </div>
+                  
+                  {/* Options */}
+                  <div className="py-2">
+                    <button
+                      onClick={() => {
+                        exportToCsv();
+                        setIsExportDropdownOpen(false);
+                      }}
+                      className="group flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-green-50 hover:text-green-800 transition-all duration-200"
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors duration-200">
+                        <FileText className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div className="ml-3 text-left flex-1">
+                        <div className="font-medium group-hover:text-green-900">Export as CSV</div>
+                        <div className="text-xs text-gray-500 group-hover:text-green-600">Spreadsheet format • Excel compatible</div>
+                      </div>
+                      <div className="flex-shrink-0 ml-2">
+                        <svg className="h-4 w-4 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        exportToPdf();
+                        setIsExportDropdownOpen(false);
+                      }}
+                      className="group flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-800 transition-all duration-200"
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 transition-colors duration-200">
+                        <FileText className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div className="ml-3 text-left flex-1">
+                        <div className="font-medium group-hover:text-red-900">Export as PDF</div>
+                        <div className="text-xs text-gray-500 group-hover:text-red-600">Professional report • Print ready</div>
+                      </div>
+                      <div className="flex-shrink-0 ml-2">
+                        <svg className="h-4 w-4 text-gray-400 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                  
+                  {/* Footer */}
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 text-center">
+                      Current filters applied: {currentTab === 'active' ? 'Active' : 'Expired'} Contracts
+                      {searchQuery && ` • "${searchQuery}"`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Rows per page selector */}
           <select
             value={rowsPerPage}
             onChange={(e) => {

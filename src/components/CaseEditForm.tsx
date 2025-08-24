@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Building } from 'lucide-react';
+import { X, Save, Building, Plus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import apiService from '../services/apiService';
-import type { Case } from '../lib/types';
+import { lawFirmService } from '../services/lawFirmService';
+import type { Case, LawFirm } from '../lib/types';
+import { NewLawFirmModal } from './NewLawFirmModal';
 
 interface CaseEditFormProps {
   caseData: Case;
@@ -29,6 +31,7 @@ export function CaseEditForm({ caseData, onSave, onCancel, loading = false }: Ca
     priority: caseData.priority || 'medium',
     status: caseData.status || 'open',
     department_id: caseData.department_id || '',
+    law_firm_id: caseData.law_firm_id || '',
     client_name: caseData.client_name || '',
     case_number: caseData.case_number || '',
     filing_date: caseData.filing_date || '',
@@ -40,10 +43,13 @@ export function CaseEditForm({ caseData, onSave, onCancel, loading = false }: Ca
   });
 
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [lawFirms, setLawFirms] = useState<LawFirm[]>([]);
+  const [showNewLawFirmModal, setShowNewLawFirmModal] = useState(false);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
     loadDepartments();
+    loadLawFirms();
   }, []);
 
   const loadDepartments = async () => {
@@ -56,11 +62,48 @@ export function CaseEditForm({ caseData, onSave, onCancel, loading = false }: Ca
     }
   };
 
+  const loadLawFirms = async () => {
+    try {
+      const firms = await lawFirmService.getAllLawFirms();
+      
+      // Add "In House" as the first option if it doesn't exist
+      const inHouseFirm: LawFirm = {
+        id: 'in-house',
+        name: 'In House',
+        firm_type: 'in_house',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      };
+      
+      const hasInHouse = firms.some(firm => firm.firm_type === 'in_house');
+      const allFirms = hasInHouse ? firms : [inHouseFirm, ...firms];
+      
+      setLawFirms(allFirms);
+    } catch (error) {
+      console.error('Error loading law firms:', error);
+      // Fallback to just In House option
+      setLawFirms([{
+        id: 'in-house',
+        name: 'In House',
+        firm_type: 'in_house',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      }]);
+    }
+  };
+
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
+  };
+
+  const handleLawFirmCreated = (newLawFirm: LawFirm) => {
+    setLawFirms(prev => [...prev, newLawFirm]);
+    setFormData(prev => ({ ...prev, law_firm_id: newLawFirm.id }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -174,6 +217,46 @@ export function CaseEditForm({ caseData, onSave, onCancel, loading = false }: Ca
           </Select>
           {departments.length === 0 && (
             <p className="text-sm text-gray-500 mt-2">No departments available. Contact an administrator to create departments.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Law Firm Assignment */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <Building className="h-5 w-5 mr-2" />
+          Law Firm Assignment
+        </h3>
+        <div>
+          <Label htmlFor="law_firm">Law Firm</Label>
+          <div className="flex gap-2">
+            <Select 
+              value={formData.law_firm_id} 
+              onValueChange={(value) => handleInputChange('law_firm_id', value)}
+            >
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Select law firm" />
+              </SelectTrigger>
+              <SelectContent>
+                {lawFirms.map((firm) => (
+                  <SelectItem key={firm.id} value={firm.id}>
+                    {firm.name} {firm.firm_type === 'in_house' ? '(In House)' : '(External)'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowNewLawFirmModal(true)}
+              className="shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          {lawFirms.length === 0 && (
+            <p className="text-sm text-gray-500 mt-2">No law firms available. Click the + button to add a new law firm.</p>
           )}
         </div>
       </div>
@@ -328,6 +411,13 @@ export function CaseEditForm({ caseData, onSave, onCancel, loading = false }: Ca
           {loading ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
+
+      {/* New Law Firm Modal */}
+      <NewLawFirmModal
+        isOpen={showNewLawFirmModal}
+        onClose={() => setShowNewLawFirmModal(false)}
+        onLawFirmCreated={handleLawFirmCreated}
+      />
     </form>
   );
 }

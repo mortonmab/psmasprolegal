@@ -10,6 +10,10 @@ export const contractService = {
     return await apiService.get<Contract>(`/contracts/${id}`);
   },
 
+  async getContract(id: string): Promise<Contract> {
+    return await apiService.get<Contract>(`/contracts/${id}`);
+  },
+
   async createContract(newContract: Omit<Contract, 'id' | 'created_at' | 'updated_at'>): Promise<Contract> {
     return await apiService.post<Contract>('/contracts', newContract);
   },

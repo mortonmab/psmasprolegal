@@ -91,7 +91,36 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
       setLoading(true);
       setError(null);
       const data = await ComplianceService.getComplianceRunDetails(surveyId);
-      setSurveyDetails(data);
+
+      // Normalize snake_case from API to camelCase used in UI
+      const normalizedRun = data?.run
+        ? {
+            ...data.run,
+            startDate: data.run.startDate ?? data.run.start_date ?? '',
+            dueDate: data.run.dueDate ?? data.run.due_date ?? '',
+            createdAt: data.run.createdAt ?? data.run.created_at ?? '',
+            createdBy: data.run.createdBy ?? data.run.created_by ?? data.run.createdBy,
+          }
+        : data?.run;
+
+      const normalizedRecipients = Array.isArray(data?.recipients)
+        ? data.recipients.map((r: any) => ({
+            ...r,
+            userId: r.userId ?? r.user_id ?? r.userId,
+            departmentId: r.departmentId ?? r.department_id ?? r.departmentId,
+            departmentName: r.departmentName ?? r.department_name ?? r.departmentName,
+            emailSentAt: r.emailSentAt ?? r.email_sent_at ?? r.emailSentAt,
+            surveyCompletedAt: r.surveyCompletedAt ?? r.survey_completed_at ?? r.surveyCompletedAt,
+            email: r.email,
+            userName: r.userName ?? r.user_name ?? r.userName,
+          }))
+        : data?.recipients;
+
+      setSurveyDetails({
+        ...data,
+        run: normalizedRun,
+        recipients: normalizedRecipients,
+      });
     } catch (error) {
       console.error('Error loading survey details:', error);
       setError('Failed to load survey details');
@@ -113,7 +142,21 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
       setLoadingResponses(true);
       setError(null);
       const data = await ComplianceService.getSurveyResponses(surveyId);
-      setSurveyResponses(data);
+      // Normalize snake_case keys from API to camelCase expected by UI
+      if (data && Array.isArray(data.responses)) {
+        const normalized = data.responses.map((r: any) => ({
+          ...r,
+          departmentName: r.departmentName ?? r.department_name ?? 'Unknown Department',
+          userName: r.userName ?? r.user_name ?? '',
+          userEmail: r.userEmail ?? r.user_email ?? '',
+          questionText: r.questionText ?? r.question_text ?? '',
+          questionType: r.questionType ?? r.question_type ?? '',
+          submittedAt: r.submittedAt ?? r.submitted_at ?? r.created_at ?? ''
+        }));
+        setSurveyResponses({ ...data, responses: normalized });
+      } else {
+        setSurveyResponses(data);
+      }
     } catch (error) {
       console.error('Error loading survey responses:', error);
       setError('Failed to load survey responses');
@@ -122,19 +165,267 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
     }
   };
 
+  // Export helpers for per-department responses (CSV/PDF)
+  const exportDepartmentToCSV = (departmentName: string) => {
+    try {
+      if (!surveyResponses?.responses || !Array.isArray(surveyResponses.responses)) return;
+
+      const filtered = surveyResponses.responses.filter((r: any) => (r.departmentName || 'Unknown Department') === departmentName);
+      const headers = [
+        'Department',
+        'User Name',
+        'User Email',
+        'Question',
+        'Answer',
+        'Score',
+        'Comment',
+        'Submitted At'
+      ];
+
+      const csvRows = filtered.map((r: any) => [
+        departmentName,
+        r.userName || '',
+        r.userEmail || '',
+        r.questionText || '',
+        (r.answer ?? '').toString(),
+        r.score ?? '',
+        r.comment ?? '',
+        r.submittedAt ? new Date(r.submittedAt).toLocaleString() : ''
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map((row: any[]) => row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `compliance-${departmentName.replace(/\s+/g, '_').toLowerCase()}-responses.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+      toast({ title: 'Error', description: 'Failed to export CSV', variant: 'destructive' });
+    }
+  };
+
+  const exportDepartmentToPDF = (departmentName: string) => {
+    try {
+      if (!surveyResponses?.responses || !Array.isArray(surveyResponses.responses)) return;
+
+      const filtered = surveyResponses.responses.filter((r: any) => (r.departmentName || 'Unknown Department') === departmentName);
+
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast({ title: 'Popup blocked', description: 'Allow popups to export PDF', variant: 'destructive' });
+        return;
+      }
+
+      const tableRows = filtered.map((r: any) => `
+        <tr>
+          <td>${departmentName}</td>
+          <td>${r.userName || ''}</td>
+          <td>${r.userEmail || ''}</td>
+          <td>${r.questionText || ''}</td>
+          <td>${r.answer ?? ''}</td>
+          <td>${r.score ?? ''}</td>
+          <td>${r.comment ?? ''}</td>
+          <td>${r.submittedAt ? new Date(r.submittedAt).toLocaleString() : ''}</td>
+        </tr>
+      `).join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Department Responses - ${departmentName}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              h1 { color: #111827; font-size: 18px; margin-bottom: 8px; }
+              .meta { color: #6b7280; font-size: 12px; margin-bottom: 12px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 12px; }
+              th { background: #f9fafb; }
+              tr:nth-child(even) { background: #fafafa; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>
+            <h1>Department Responses - ${departmentName}</h1>
+            <div class="meta">
+              Exported: ${new Date().toLocaleString()} • Total responses: ${filtered.length}
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>User Name</th>
+                  <th>User Email</th>
+                  <th>Question</th>
+                  <th>Answer</th>
+                  <th>Score</th>
+                  <th>Comment</th>
+                  <th>Submitted At</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows}
+              </tbody>
+            </table>
+            <script>
+              window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };
+            </script>
+          </body>
+        </html>
+      `;
+
+      win.document.write(html);
+      win.document.close();
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+      toast({ title: 'Error', description: 'Failed to export PDF', variant: 'destructive' });
+    }
+  };
+
   const handleDownloadReport = async () => {
     try {
       setDownloading(true);
-      await ComplianceService.downloadSurveyReport(surveyId);
-      toast({
-        title: 'Success',
-        description: 'Report downloaded successfully',
+
+      // Fetch latest responses to include in the PDF
+      const data = await ComplianceService.getSurveyResponses(surveyId);
+      const normalizedResponses = Array.isArray(data?.responses)
+        ? data.responses.map((r: any) => ({
+            ...r,
+            departmentName: r.departmentName ?? r.department_name ?? 'Unknown Department',
+            userName: r.userName ?? r.user_name ?? '',
+            userEmail: r.userEmail ?? r.user_email ?? '',
+            questionText: r.questionText ?? r.question_text ?? '',
+            questionType: r.questionType ?? r.question_type ?? '',
+            submittedAt: r.submittedAt ?? r.submitted_at ?? r.created_at ?? ''
+          }))
+        : [];
+
+      // Group responses by department
+      const departmentGroups = new Map<string, any[]>();
+      normalizedResponses.forEach((r: any) => {
+        const key = r.departmentName || 'Unknown Department';
+        if (!departmentGroups.has(key)) departmentGroups.set(key, []);
+        departmentGroups.get(key)!.push(r);
       });
+
+      const deptSections = Array.from(departmentGroups.entries())
+        .map(([dept, rows]) => {
+          // Group by user (prefer userId/email if available)
+          const userGroups = new Map<string, { userName: string; userEmail: string; items: any[] }>();
+          rows.forEach((r: any) => {
+            const key = (r.userEmail || r.userName || 'Unknown User') as string;
+            if (!userGroups.has(key)) {
+              userGroups.set(key, { userName: r.userName || 'Unknown User', userEmail: r.userEmail || '', items: [] });
+            }
+            userGroups.get(key)!.items.push(r);
+          });
+
+          const userBlocks = Array.from(userGroups.values())
+            .map(({ userName, userEmail, items }) => {
+              const qRows = items
+                .map(
+                  (r: any) => `
+              <tr>
+                <td>${r.questionText || ''}</td>
+                <td>${r.answer ?? ''}</td>
+                <td>${r.score ?? ''}</td>
+                <td>${r.comment ?? ''}</td>
+                <td>${r.submittedAt ? new Date(r.submittedAt).toLocaleString() : ''}</td>
+              </tr>`
+                )
+                .join('');
+
+              return `
+            <div class="meta"><strong>User:</strong> ${userName}${userEmail ? ` • <strong>Email:</strong> ${userEmail}` : ''}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Question</th>
+                  <th>Answer</th>
+                  <th>Score</th>
+                  <th>Comment</th>
+                  <th>Submitted At</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${qRows || '<tr><td colspan="5" style="text-align:center;color:#6b7280">No answers</td></tr>'}
+              </tbody>
+            </table>`;
+            })
+            .join('<br />');
+
+          return `
+        <h2>${dept}</h2>
+        <div class="meta">Responses: ${rows.length}</div>
+        ${userBlocks || '<div class="meta">No responses</div>'}`;
+        })
+        .join('<hr />');
+
+      const title = surveyDetails?.run.title || 'Compliance Survey';
+      const meta = `Due: ${surveyDetails?.run?.dueDate ? formatDate(surveyDetails.run.dueDate) : 'N/A'} • Questions: ${
+        surveyDetails?.questions?.length ?? 0
+      } • Recipients: ${surveyDetails?.statistics?.totalRecipients ?? 0}`;
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${title} - Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+              h1 { font-size: 20px; margin: 0 0 6px 0; }
+              h2 { font-size: 16px; margin: 24px 0 8px 0; }
+              .meta { color: #6b7280; font-size: 12px; margin-bottom: 12px; }
+              .stats { display: flex; gap: 12px; margin: 12px 0 18px 0; color: #374151; font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+              th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 12px; vertical-align: top; }
+              th { background: #f9fafb; }
+              tr:nth-child(even) { background: #fafafa; }
+              hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>
+            <h1>${title} — PDF Report</h1>
+            <div class="meta">${meta}</div>
+            <div class="stats">
+              <div><strong>Completed:</strong> ${surveyDetails?.statistics?.completedSurveys ?? 0}</div>
+              <div><strong>Pending:</strong> ${surveyDetails?.statistics?.pendingSurveys ?? 0}</div>
+              <div><strong>Completion Rate:</strong> ${(surveyDetails?.statistics?.completionRate ?? 0).toFixed(1)}%</div>
+              <div><strong>Exported:</strong> ${new Date().toLocaleString()}</div>
+            </div>
+            ${deptSections || '<div class="meta">No responses available</div>'}
+            <script>
+              window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; };
+            </script>
+          </body>
+        </html>
+      `;
+
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast({ title: 'Popup blocked', description: 'Allow popups to download the PDF', variant: 'destructive' });
+      } else {
+        win.document.write(html);
+        win.document.close();
+      }
+
     } catch (error) {
-      console.error('Error downloading report:', error);
+      console.error('Error generating PDF report:', error);
       toast({
         title: 'Error',
-        description: 'Failed to download report',
+        description: 'Failed to generate PDF report',
         variant: 'destructive'
       });
     } finally {
@@ -486,8 +777,28 @@ export function ComplianceSurveyModal({ isOpen, onClose, surveyId }: ComplianceS
                           return Array.from(departmentGroups.entries()).map(([deptName, responses]: [string, any[]]) => (
                             <div key={deptName} className="bg-white border border-gray-200 rounded-lg">
                               <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                                <h4 className="text-lg font-semibold text-gray-900">{deptName}</h4>
-                                <p className="text-sm text-gray-600">{responses.length} response{responses.length !== 1 ? 's' : ''}</p>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h4 className="text-lg font-semibold text-gray-900">{deptName}</h4>
+                                    <p className="text-sm text-gray-600">{responses.length} response{responses.length !== 1 ? 's' : ''}</p>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => exportDepartmentToCSV(deptName)}
+                                    >
+                                      <Download className="h-4 w-4 mr-2" /> CSV
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => exportDepartmentToPDF(deptName)}
+                                    >
+                                      <FileText className="h-4 w-4 mr-2" /> PDF
+                                    </Button>
+                                  </div>
+                                </div>
                               </div>
                               <div className="p-4 space-y-4">
                                 {responses.map((response: any) => (

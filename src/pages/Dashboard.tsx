@@ -15,6 +15,7 @@ import { useContracts } from '../hooks/useContracts';
 import { useVendors } from '../hooks/useVendors';
 import { useUsers } from '../hooks/useUsers';
 import { CalendarService, CalendarEvent } from '../services/calendarService';
+import { ContractDetailsModal } from '../components/ContractDetailsModal';
 
 
 export function Dashboard() {
@@ -29,6 +30,10 @@ export function Dashboard() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [upcomingCalendarEvents, setUpcomingCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarEventsLoading, setCalendarEventsLoading] = useState(false);
+  
+  // Contract modal state
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [selectedContractId, setSelectedContractId] = useState<string>('');
 
   // Fetch upcoming calendar events
   useEffect(() => {
@@ -168,6 +173,12 @@ export function Dashboard() {
   }, [filteredCases, currentPage, rowsPerPage]);
 
   const totalPages = Math.ceil(filteredCases.length / rowsPerPage);
+
+  // Handle contract click
+  const handleContractClick = (contractId: string) => {
+    setSelectedContractId(contractId);
+    setShowContractModal(true);
+  };
 
   // Loading state
   if (casesLoading || tasksLoading || contractsLoading || vendorsLoading || usersLoading || calendarEventsLoading) {
@@ -406,25 +417,48 @@ export function Dashboard() {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {expiringContracts.map((contract) => (
-                  <div key={contract.id} className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{contract.title}</p>
-                      <p className="text-xs text-gray-500">Expires: {contract.expiryDate}</p>
+                {expiringContracts.length > 0 ? (
+                  expiringContracts.map((contract) => (
+                    <div 
+                      key={contract.id} 
+                      className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                      onClick={() => handleContractClick(contract.id)}
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900 hover:text-blue-600">{contract.title}</p>
+                        <p className="text-xs text-gray-500">Expires: {contract.expiryDate}</p>
+                      </div>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        contract.status === 'warning' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {contract.status}
+                      </span>
                     </div>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      contract.status === 'warning' ? 'bg-red-100 text-red-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {contract.status}
-                    </span>
+                  ))
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-500">No contracts expiring soon</p>
+                    <button 
+                      onClick={() => window.location.href = '/contracts'}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      View all contracts
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Contract Details Modal */}
+      <ContractDetailsModal
+        isOpen={showContractModal}
+        onClose={() => setShowContractModal(false)}
+        contractId={selectedContractId}
+      />
     </div>
   );
 }

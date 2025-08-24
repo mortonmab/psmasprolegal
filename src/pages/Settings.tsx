@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Lock, User, Mail, Database, Shield, Users, Plus, FileText } from 'lucide-react';
+import { Users, Plus, FileText, Globe, RefreshCw, Play, Pause } from 'lucide-react';
 import { scrapingService, ScrapingSource } from '../services/scrapingService';
 import { Toggle } from '../components/ui/toggle';
 import { Input } from '../components/ui/input';
@@ -34,11 +34,20 @@ interface SourceFormData {
   };
 }
 
-
+interface ScrapingJob {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  progress: number;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
 
 export function Settings() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState('profile');
+  const [activeSection, setActiveSection] = useState('departments');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [isDepartmentModalOpen, setIsDepartmentModalOpen] = useState(false);
@@ -166,30 +175,6 @@ export function Settings() {
 
   const sections: SettingsSection[] = [
     {
-      id: 'profile',
-      name: 'Profile Settings',
-      icon: User,
-      description: 'Manage your personal information and preferences'
-    },
-    {
-      id: 'security',
-      name: 'Security',
-      icon: Lock,
-      description: 'Password and authentication settings'
-    },
-    {
-      id: 'notifications',
-      name: 'Notifications',
-      icon: Bell,
-      description: 'Configure your notification preferences'
-    },
-    {
-      id: 'email',
-      name: 'Email Settings',
-      icon: Mail,
-      description: 'Manage email notifications and preferences'
-    },
-    {
       id: 'departments',
       name: 'Department Settings',
       icon: Users,
@@ -202,16 +187,10 @@ export function Settings() {
       description: 'Manage contract types and categories'
     },
     {
-      id: 'system',
-      name: 'System Settings',
-      icon: Database,
-      description: 'Configure system-wide settings'
-    },
-    {
-      id: 'privacy',
-      name: 'Privacy',
-      icon: Shield,
-      description: 'Manage your privacy settings'
+      id: 'sources',
+      name: 'Sources',
+      icon: Globe,
+      description: 'Configure web scraping sources and manage data collection'
     },
     {
       id: 'users',
@@ -223,8 +202,6 @@ export function Settings() {
 
   return (
     <div className="h-full space-y-6">
-
-      
       <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
 
       <div className="bg-white rounded-lg shadow h-[calc(100vh-12rem)]">
@@ -253,42 +230,8 @@ export function Settings() {
 
           {/* Content Area */}
           <div className="col-span-3 p-6 overflow-y-auto">
-            {activeSection === 'profile' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-medium text-gray-900">Profile Settings</h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                    <input
-                      type="text"
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input
-                      type="email"
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Role</label>
-                    <input
-                      type="text"
-                      disabled
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <button className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            )}
-            {activeSection === 'system' && (
-              <ScrapingSettings />
+            {activeSection === 'sources' && (
+              <SourcesSettings />
             )}
             {activeSection === 'users' && (
               <UsersComponent />
@@ -298,105 +241,75 @@ export function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-medium text-gray-900">Contract Types</h2>
-                    <p className="text-sm text-gray-500 mt-1">Manage contract types and categories</p>
+                    <p className="text-sm text-gray-500">Manage contract types and categories used throughout the system</p>
                   </div>
-                  <Button onClick={handleAddContractType} className="flex items-center gap-2">
-                    <Plus className="h-4 w-4" />
+                  <Button onClick={handleAddContractType}>
+                    <Plus className="h-4 w-4 mr-2" />
                     Add Contract Type
                   </Button>
                 </div>
-                
-                <div className="space-y-4">
-                  {loadingContractTypes ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="text-gray-500">Loading contract types...</div>
-                    </div>
-                  ) : contractTypes.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="text-gray-500 mb-4">No contract types found</div>
-                      <Button onClick={handleAddContractType} variant="outline">
-                        Create your first contract type
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                      <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                        <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '800px' }}>
+
+                {loadingContractTypes ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-gray-500">Loading contract types...</div>
+                  </div>
+                ) : (
+                  <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                    {contractTypes.length === 0 ? (
+                      <div className="text-center py-8">
+                        <div className="text-gray-500 mb-4">No contract types configured</div>
+                        <Button onClick={handleAddContractType}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add your first contract type
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
                           <thead className="bg-gray-50">
                             <tr>
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Contract Type
+                                Name
                               </th>
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Description
                               </th>
                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Color
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Status
-                              </th>
-                              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
                                 Actions
                               </th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {contractTypes.map(contractType => (
-                              <tr key={contractType.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-gray-900">{contractType.name}</div>
+                            {contractTypes.map((contractType) => (
+                              <tr key={contractType.id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {contractType.name}
                                 </td>
-                                <td className="px-6 py-4">
-                                  <div className="text-sm text-gray-900 max-w-xs truncate">
-                                    {contractType.description || 'No description'}
-                                  </div>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  {contractType.description}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="flex items-center space-x-2">
-                                    <div 
-                                      className="w-6 h-6 rounded border"
-                                      style={{ backgroundColor: contractType.color }}
-                                    />
-                                    <span className="text-sm text-gray-900">{contractType.color}</span>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                    contractType.is_active 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : 'bg-red-100 text-red-800'
-                                  }`}>
-                                    {contractType.is_active ? 'Active' : 'Inactive'}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium w-32">
-                                  <div className="flex items-center justify-end space-x-2">
-                                    <Button
-                                      onClick={() => handleEditContractType(contractType)}
-                                      variant="outline"
-                                      size="sm"
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleDeleteContractType(contractType.id)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="text-red-600 hover:text-red-900"
-                                    >
-                                      Delete
-                                    </Button>
-                                  </div>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                  <button
+                                    onClick={() => handleEditContractType(contractType)}
+                                    className="text-blue-600 hover:text-blue-900 mr-4"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteContractType(contractType.id)}
+                                    className="text-red-600 hover:text-red-900"
+                                  >
+                                    Delete
+                                  </button>
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {activeSection === 'departments' && (
@@ -404,105 +317,75 @@ export function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-medium text-gray-900">Department Settings</h2>
-                    <p className="text-sm text-gray-500 mt-1">Scroll horizontally to view all columns</p>
+                    <p className="text-sm text-gray-500">Manage departments and department heads</p>
                   </div>
-                  <Button onClick={handleAddDepartment} className="flex items-center gap-2">
-                    <Plus className="h-4 w-4" />
+                  <Button onClick={handleAddDepartment}>
+                    <Plus className="h-4 w-4 mr-2" />
                     Add Department
                   </Button>
                 </div>
-                
-                <div className="space-y-4">
-                  {loadingDepartments ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="text-gray-500">Loading departments...</div>
-                    </div>
-                  ) : departments.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="text-gray-500 mb-4">No departments found</div>
-                      <Button onClick={handleAddDepartment} variant="outline">
-                        Create your first department
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                      <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                        <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '800px' }}>
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Department Name
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Department Head
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Email
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Phone
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {departments.map(dept => (
-                            <tr key={dept.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{dept.name}</div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {dept.description || 'Not assigned'}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{dept.email || 'N/A'}</div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{dept.phone || 'N/A'}</div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                  dept.status === 'active' 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {dept.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium w-32">
-                                <div className="flex items-center justify-end space-x-2">
-                                  <Button
-                                    onClick={() => handleEditDepartment(dept)}
-                                    variant="outline"
-                                    size="sm"
+
+                {loadingDepartments ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-gray-500">Loading departments...</div>
+                  </div>
+                ) : (
+                  <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                    {departments.length === 0 ? (
+                      <div className="text-center py-8">
+                        <div className="text-gray-500 mb-4">No departments configured</div>
+                        <Button onClick={handleAddDepartment}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add your first department
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Name
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Head
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {departments.map((department) => (
+                              <tr key={department.id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {department.name}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  {department.head_name || 'Not assigned'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                  <button
+                                    onClick={() => handleEditDepartment(department)}
+                                    className="text-blue-600 hover:text-blue-900 mr-4"
                                   >
                                     Edit
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleDeleteDepartment(dept.id)}
-                                    variant="outline"
-                                    size="sm"
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteDepartment(department.id)}
                                     className="text-red-600 hover:text-red-900"
                                   >
                                     Delete
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -528,10 +411,12 @@ export function Settings() {
   );
 }
 
-function ScrapingSettings() {
+function SourcesSettings() {
   const [sources, setSources] = useState<ScrapingSource[]>([]);
   const [editingSource, setEditingSource] = useState<SourceFormData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scrapingJobs, setScrapingJobs] = useState<ScrapingJob[]>([]);
+  const [isScrapingAll, setIsScrapingAll] = useState(false);
   const { toast } = useToast();
 
   // Fetch sources on component mount
@@ -634,6 +519,122 @@ function ScrapingSettings() {
     }
   };
 
+  const handleScrapeSource = async (sourceId: string, sourceName: string) => {
+    try {
+      const job = await scrapingService.scrapeContent(sourceId);
+      
+      if (job && job.status === 'queued') {
+        const newJob: ScrapingJob = {
+          id: job.jobId,
+          sourceId,
+          sourceName,
+          status: 'queued',
+          progress: 0,
+          startedAt: new Date().toISOString()
+        };
+        
+        setScrapingJobs(prev => [...prev, newJob]);
+        
+        // Start polling for job status
+        pollJobStatus(job.jobId);
+        
+        toast({
+          title: "Success",
+          description: `Scraping job started for ${sourceName}`
+        });
+      }
+    } catch (error) {
+      console.error('Error starting scraping job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start scraping job",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleScrapeAll = async () => {
+    setIsScrapingAll(true);
+    const enabledSources = sources.filter(s => s.enabled);
+    
+    try {
+      for (const source of enabledSources) {
+        await handleScrapeSource(source.id, source.name);
+        // Small delay between jobs to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      toast({
+        title: "Success",
+        description: `Started scraping for ${enabledSources.length} sources`
+      });
+    } catch (error) {
+      console.error('Error starting bulk scraping:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start bulk scraping",
+        variant: "destructive"
+      });
+    } finally {
+      setIsScrapingAll(false);
+    }
+  };
+
+  const pollJobStatus = async (jobId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await scrapingService.getScrapingStatus(jobId);
+        
+        setScrapingJobs(prev => prev.map(job => 
+          job.id === jobId 
+            ? { 
+                ...job, 
+                status: status.status, 
+                progress: status.progress || job.progress,
+                completedAt: status.status === 'completed' ? new Date().toISOString() : job.completedAt,
+                error: status.error
+              }
+            : job
+        ));
+        
+        if (status.status === 'completed' || status.status === 'failed') {
+          clearInterval(pollInterval);
+          
+          if (status.status === 'completed') {
+            toast({
+              title: "Success",
+              description: "Scraping job completed successfully"
+            });
+          } else {
+            toast({
+              title: "Error",
+              description: `Scraping job failed: ${status.error || 'Unknown error'}`,
+              variant: "destructive"
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error polling job status:', error);
+        clearInterval(pollInterval);
+      }
+    }, 2000); // Poll every 2 seconds
+  };
+
+  const getJobStatusIcon = (status: string) => {
+    switch (status) {
+      case 'queued':
+        return <RefreshCw className="h-4 w-4 text-yellow-500 animate-spin" />;
+      case 'in_progress':
+        return <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />;
+      case 'completed':
+        return <Play className="h-4 w-4 text-green-500" />;
+      case 'failed':
+        return <Pause className="h-4 w-4 text-red-500" />;
+      default:
+        return <RefreshCw className="h-4 w-4 text-gray-400" />;
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -648,27 +649,73 @@ function ScrapingSettings() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium text-gray-900">Web Scraping Sources</h2>
-        <button
-          onClick={() => setEditingSource({
-            id: '',
-            name: '',
-            url: '',
-            type: 'case-law',
-            enabled: true,
-            selectors: { title: '', content: '' }
-          })}
-          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-        >
-          Add Source
-        </button>
+        <div>
+          <h2 className="text-lg font-medium text-gray-900">Web Scraping Sources</h2>
+          <p className="text-sm text-gray-500">Configure and manage web scraping sources for legal resources</p>
+        </div>
+        <div className="flex space-x-2">
+          <Button
+            onClick={handleScrapeAll}
+            disabled={isScrapingAll || sources.filter(s => s.enabled).length === 0}
+            variant="outline"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isScrapingAll ? 'animate-spin' : ''}`} />
+            Scrape All Enabled
+          </Button>
+          <Button
+            onClick={() => setEditingSource({
+              id: '',
+              name: '',
+              url: '',
+              type: 'case-law',
+              enabled: true,
+              selectors: { title: '', content: '' }
+            })}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Source
+          </Button>
+        </div>
       </div>
+
+      {/* Active Scraping Jobs */}
+      {scrapingJobs.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-blue-900 mb-3">Active Scraping Jobs</h3>
+          <div className="space-y-2">
+            {scrapingJobs.map(job => (
+              <div key={job.id} className="flex items-center justify-between bg-white rounded p-3">
+                <div className="flex items-center space-x-3">
+                  {getJobStatusIcon(job.status)}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{job.sourceName}</p>
+                    <p className="text-xs text-gray-500">
+                      {job.status === 'queued' && 'Queued for processing'}
+                      {job.status === 'in_progress' && `Processing... ${job.progress}%`}
+                      {job.status === 'completed' && 'Completed successfully'}
+                      {job.status === 'failed' && `Failed: ${job.error}`}
+                    </p>
+                  </div>
+                </div>
+                {job.status === 'in_progress' && (
+                  <div className="w-24 bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${job.progress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {sources.length === 0 ? (
           <div className="text-center py-8">
             <div className="text-gray-500 mb-4">No scraping sources configured</div>
-            <button
+            <Button
               onClick={() => setEditingSource({
                 id: '',
                 name: '',
@@ -677,10 +724,10 @@ function ScrapingSettings() {
                 enabled: true,
                 selectors: { title: '', content: '' }
               })}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
             >
+              <Plus className="h-4 w-4 mr-2" />
               Add your first source
-            </button>
+            </Button>
           </div>
         ) : (
           <ul className="divide-y divide-gray-200">
@@ -692,16 +739,36 @@ function ScrapingSettings() {
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {source.name}
                       </p>
-                      <Toggle
-                        checked={source.enabled}
-                        onCheckedChange={(checked) => handleSourceToggle(source.id, checked)}
-                      />
+                      <div className="flex items-center space-x-2">
+                        <Toggle
+                          checked={source.enabled}
+                          onCheckedChange={(checked) => handleSourceToggle(source.id, checked)}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleScrapeSource(source.id, source.name)}
+                          disabled={!source.enabled || scrapingJobs.some(j => j.sourceId === source.id && j.status === 'in_progress')}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Scrape
+                        </Button>
+                      </div>
                     </div>
                     <p className="mt-1 text-sm text-gray-500">{source.url}</p>
                     <div className="mt-2 flex items-center space-x-2 text-xs text-gray-500">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                         {source.type}
                       </span>
+                      {source.enabled ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-800">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-800">
+                          Inactive
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="ml-4 flex items-center space-x-2">
@@ -728,7 +795,7 @@ function ScrapingSettings() {
       {/* Edit/Add Source Modal */}
       {editingSource && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               {editingSource.id ? 'Edit Source' : 'Add Source'}
             </h3>
@@ -773,10 +840,10 @@ function ScrapingSettings() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Selectors</label>
+                <label className="block text-sm font-medium text-gray-700">CSS Selectors</label>
                 <div className="space-y-2">
                   <Input
-                    placeholder="Title Selector"
+                    placeholder="Title Selector (e.g., .title, h1, .judgment-title)"
                     value={editingSource.selectors.title}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSource({
                       ...editingSource,
@@ -784,7 +851,7 @@ function ScrapingSettings() {
                     })}
                   />
                   <Input
-                    placeholder="Content Selector"
+                    placeholder="Content Selector (e.g., .content, .body, .judgment-body)"
                     value={editingSource.selectors.content}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSource({
                       ...editingSource,
@@ -792,7 +859,7 @@ function ScrapingSettings() {
                     })}
                   />
                   <Input
-                    placeholder="Date Selector (optional)"
+                    placeholder="Date Selector (optional, e.g., .date, .published-date)"
                     value={editingSource.selectors.date || ''}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSource({
                       ...editingSource,
@@ -800,7 +867,7 @@ function ScrapingSettings() {
                     })}
                   />
                   <Input
-                    placeholder="Reference Selector (optional)"
+                    placeholder="Reference Selector (optional, e.g., .reference, .citation)"
                     value={editingSource.selectors.reference || ''}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSource({
                       ...editingSource,
@@ -808,6 +875,10 @@ function ScrapingSettings() {
                     })}
                   />
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  CSS selectors help the system extract specific content from the website. 
+                  Use browser developer tools to find the correct selectors.
+                </p>
               </div>
 
               <div className="flex justify-end space-x-3">

@@ -182,7 +182,7 @@ export class RecurringComplianceService {
           dueDate: survey.due_date,
           recipientEmail: recipient.email,
           recipientName: recipient.full_name,
-          surveyUrl: surveyUrl
+          surveyLink: surveyUrl
         });
 
         // Mark email as sent

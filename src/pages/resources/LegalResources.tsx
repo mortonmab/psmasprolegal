@@ -3,6 +3,7 @@ import { Search, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { scrapingService, ScrapedData } from '../../services/scrapingService';
 import { useToast } from '../../components/ui/use-toast';
+import { ManualUploadModal } from '../../components/ManualUploadModal';
 
 interface SearchResult {
   id: string;
@@ -145,7 +146,7 @@ export function LegalResources() {
   const initiateWebCrawl = async (type: 'case-law' | 'legislation' | 'regulation' | 'gazette') => {
     try {
       setCrawlStatus(prev => ({
-        ...prev,
+        ...(prev || {}),
         [type]: { type, status: 'crawling', progress: 0 }
       }));
 
@@ -201,9 +202,9 @@ export function LegalResources() {
               
               // Update progress
               setCrawlStatus(prev => ({
-                ...prev,
+                ...(prev || {}),
                 [type]: {
-                  ...prev[type],
+                  ...(prev?.[type] || { type, status: 'crawling' }),
                   progress: status.progress || ((i + 1) / sources.length) * 100
                 }
               }));
@@ -221,7 +222,7 @@ export function LegalResources() {
 
       // Update status to completed
       setCrawlStatus(prev => ({
-        ...prev,
+        ...(prev || {}),
         [type]: { 
           type, 
           status: 'completed', 
@@ -237,7 +238,7 @@ export function LegalResources() {
     } catch (error) {
       console.error(`Crawl failed for ${type}:`, error);
       setCrawlStatus(prev => ({
-        ...prev,
+        ...(prev || {}),
         [type]: { type, status: 'error' }
       }));
 
@@ -371,6 +372,27 @@ export function LegalResources() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Upload Section */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">Upload Legal Resources</h2>
+            <p className="text-gray-600">Manually upload case law, legislation, regulations, or gazettes</p>
+          </div>
+          <ManualUploadModal onUploadSuccess={() => {
+            // Refresh search results if there's an active search
+            if (searchQuery.trim()) {
+              // Trigger a new search to include the uploaded content
+              const event = new Event('input', { bubbles: true });
+              const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+              if (searchInput) {
+                searchInput.dispatchEvent(event);
+              }
+            }
+          }} />
         </div>
       </div>
 

@@ -14,10 +14,23 @@ export interface ScrapedData {
   source_id: string;
   title: string;
   content: string;
-  url: string;
-  date?: string;
-  reference?: string;
-  created_at: string;
+  source_url: string;
+  source_name?: string;
+  date_published?: string;
+  reference_number?: string;
+  jurisdiction?: string;
+  keywords?: string;
+  scraped_at: string;
+}
+
+export interface ScrapedDataResponse {
+  data: ScrapedData[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }
 
 export interface ScrapedDataStats {
@@ -27,7 +40,7 @@ export interface ScrapedDataStats {
 }
 
 class ScrapingService {
-  private API_URL = 'http://localhost:3000/api';
+  private API_URL = '/api';
 
   // ===== SOURCE MANAGEMENT =====
 
@@ -168,10 +181,17 @@ class ScrapingService {
 
   // ===== SCRAPED DATA RETRIEVAL =====
 
-  async getScrapedData(query?: string, filters?: Record<string, any>): Promise<ScrapedData[]> {
+  async getScrapedData(filters?: {
+    source_type?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }): Promise<ScrapedDataResponse> {
     try {
       const params = new URLSearchParams();
-      if (query) params.append('q', query);
+      
       if (filters) {
         Object.entries(filters).forEach(([key, value]) => {
           if (value !== undefined && value !== null) {
@@ -184,7 +204,15 @@ class ScrapingService {
       return response.data;
     } catch (error) {
       console.error('Error fetching scraped data:', error);
-      return [];
+      return {
+        data: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          pages: 0
+        }
+      };
     }
   }
 

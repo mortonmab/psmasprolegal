@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// API base URL - adjust this based on your backend port
-const API_BASE_URL = 'http://localhost:3000/api';
+// API base URL - using relative URL for Vite proxy
+const API_BASE_URL = '/api';
 
 // Create axios instance with default config
 const api = axios.create({

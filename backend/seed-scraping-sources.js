@@ -10,10 +10,90 @@ const dbConfig = {
   port: process.env.DB_PORT || 3306
 };
 
-const initialSources = [
+// Default scraping sources
+const defaultSources = [
+  // Veritas Zimbabwe Court Sources
   {
-    name: 'Southern African Legal Information Institute (SAFLII)',
-    url: 'http://www.saflii.org',
+    name: 'Veritas Zimbabwe - Constitutional Court',
+    url: 'https://www.veritaszim.net/constitutional-court',
+    source_type: 'case_law',
+    selectors: {
+      title: 'h1, .page-title, .judgment-title, .case-title',
+      content: '.content, .judgment-content, .case-content, .entry-content, main',
+      date: '.date, .published-date, .judgment-date, .case-date, time',
+      reference: '.reference, .case-number, .citation, .judgment-reference, .file-number'
+    }
+  },
+  {
+    name: 'Veritas Zimbabwe - Supreme Court',
+    url: 'https://www.veritaszim.net/supreme-court',
+    source_type: 'case_law',
+    selectors: {
+      title: 'h1, .page-title, .judgment-title, .case-title',
+      content: '.content, .judgment-content, .case-content, .entry-content, main',
+      date: '.date, .published-date, .judgment-date, .case-date, time',
+      reference: '.reference, .case-number, .citation, .judgment-reference, .file-number'
+    }
+  },
+  {
+    name: 'Veritas Zimbabwe - High Court',
+    url: 'https://www.veritaszim.net/high-court',
+    source_type: 'case_law',
+    selectors: {
+      title: 'h1, .page-title, .judgment-title, .case-title',
+      content: '.content, .judgment-content, .case-content, .entry-content, main',
+      date: '.date, .published-date, .judgment-date, .case-date, time',
+      reference: '.reference, .case-number, .citation, .judgment-reference, .file-number'
+    }
+  },
+  {
+    name: 'Veritas Zimbabwe - Electoral Court',
+    url: 'https://www.veritaszim.net/electoral-court',
+    source_type: 'case_law',
+    selectors: {
+      title: 'h1, .page-title, .judgment-title, .case-title',
+      content: '.content, .judgment-content, .case-content, .entry-content, main',
+      date: '.date, .published-date, .judgment-date, .case-date, time',
+      reference: '.reference, .case-number, .citation, .judgment-reference, .file-number'
+    }
+  },
+  {
+    name: 'Veritas Zimbabwe - Labour Court',
+    url: 'https://www.veritaszim.net/labour-court',
+    source_type: 'case_law',
+    selectors: {
+      title: 'h1, .page-title, .judgment-title, .case-title',
+      content: '.content, .judgment-content, .case-content, .entry-content, main',
+      date: '.date, .published-date, .judgment-date, .case-date, time',
+      reference: '.reference, .case-number, .citation, .judgment-reference, .file-number'
+    }
+  },
+  // Existing sources
+  {
+    name: 'SAFLII - Constitutional Court',
+    url: 'https://www.saflii.org/za/cases/ZACC/',
+    source_type: 'case_law',
+    selectors: {
+      title: '.judgment-title, h1, .title',
+      content: '.judgment-body, .content, .body',
+      date: '.judgment-date, .date, .published-date',
+      reference: '.judgment-reference, .citation, .case-number'
+    }
+  },
+  {
+    name: 'SAFLII - Supreme Court of Appeal',
+    url: 'https://www.saflii.org/za/cases/ZASCA/',
+    source_type: 'case_law',
+    selectors: {
+      title: '.judgment-title, h1, .title',
+      content: '.judgment-body, .content, .body',
+      date: '.judgment-date, .date, .published-date',
+      reference: '.judgment-reference, .citation, .case-number'
+    }
+  },
+  {
+    name: 'SAFLII - High Courts',
+    url: 'https://www.saflii.org/za/cases/ZAGPJHC/',
     source_type: 'case_law',
     selectors: {
       title: '.judgment-title, h1, .title',
@@ -27,9 +107,10 @@ const initialSources = [
     url: 'https://www.gov.za/documents/acts',
     source_type: 'legislation',
     selectors: {
-      title: '.legislation-title, h1, .title',
-      content: '.legislation-content, .content, .body',
-      date: '.publication-date, .date, .enacted-date'
+      title: '.act-title, h1, .title',
+      content: '.act-content, .content, .body',
+      date: '.act-date, .date, .published-date',
+      reference: '.act-number, .reference, .citation'
     }
   },
   {
@@ -39,40 +120,41 @@ const initialSources = [
     selectors: {
       title: '.regulation-title, h1, .title',
       content: '.regulation-content, .content, .body',
-      date: '.publication-date, .date, .enacted-date'
+      date: '.regulation-date, .date, .published-date',
+      reference: '.regulation-number, .reference, .citation'
     }
   },
   {
     name: 'Government Gazette',
-    url: 'https://www.gov.za/documents/government-gazette',
+    url: 'https://www.gov.za/documents/gazettes',
     source_type: 'gazette',
     selectors: {
       title: '.gazette-title, h1, .title',
       content: '.gazette-content, .content, .body',
-      date: '.gazette-date, .date, .publication-date',
-      reference: '.gazette-number, .reference, .gazette-ref'
+      date: '.gazette-date, .date, .published-date',
+      reference: '.gazette-number, .reference, .citation'
     }
   },
   {
-    name: 'Constitutional Court of South Africa',
-    url: 'https://www.concourt.org.za/index.php/judgment',
+    name: 'Department of Justice - Case Law',
+    url: 'https://www.justice.gov.za/courts/judgments/',
     source_type: 'case_law',
     selectors: {
       title: '.judgment-title, h1, .title',
-      content: '.judgment-content, .content, .body',
+      content: '.judgment-body, .content, .body',
       date: '.judgment-date, .date, .published-date',
-      reference: '.case-number, .citation, .reference'
+      reference: '.judgment-reference, .citation, .case-number'
     }
   },
   {
-    name: 'Supreme Court of Appeal',
-    url: 'https://www.supremecourtofappeal.org.za/judgments',
-    source_type: 'case_law',
+    name: 'Department of Justice - Legislation',
+    url: 'https://www.justice.gov.za/legislation/',
+    source_type: 'legislation',
     selectors: {
-      title: '.judgment-title, h1, .title',
-      content: '.judgment-content, .content, .body',
-      date: '.judgment-date, .date, .published-date',
-      reference: '.case-number, .citation, .reference'
+      title: '.legislation-title, h1, .title',
+      content: '.legislation-content, .content, .body',
+      date: '.legislation-date, .date, .published-date',
+      reference: '.legislation-number, .reference, .citation'
     }
   }
 ];
@@ -92,34 +174,35 @@ async function seedScrapingSources() {
     );
     
     if (existingSources[0].count > 0) {
-      console.log('Scraping sources already exist. Skipping seeding.');
+      console.log('Scraping sources already exist. Skipping seed...');
       return;
     }
     
     console.log('Seeding scraping sources...');
     
-    for (const source of initialSources) {
+    for (const source of defaultSources) {
       const id = crypto.randomUUID();
       
       await connection.execute(
-        'INSERT INTO scraping_sources (id, name, url, source_type, selectors, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO scraping_sources (id, name, url, source_type, is_active, selectors) VALUES (?, ?, ?, ?, ?, ?)',
         [
           id,
           source.name,
           source.url,
           source.source_type,
-          JSON.stringify(source.selectors),
-          true
+          true, // is_active
+          JSON.stringify(source.selectors)
         ]
       );
       
       console.log(`✓ Added source: ${source.name}`);
     }
     
-    console.log('Scraping sources seeded successfully!');
+    console.log('✅ Scraping sources seeded successfully!');
+    console.log(`Added ${defaultSources.length} default sources`);
     
   } catch (error) {
-    console.error('Error seeding scraping sources:', error);
+    console.error('❌ Error seeding scraping sources:', error);
     throw error;
   } finally {
     if (connection) {
@@ -128,15 +211,15 @@ async function seedScrapingSources() {
   }
 }
 
-// Run the seeding function
+// Run the seed function if this file is executed directly
 if (require.main === module) {
   seedScrapingSources()
     .then(() => {
-      console.log('Seeding completed successfully');
+      console.log('Seed completed successfully');
       process.exit(0);
     })
     .catch((error) => {
-      console.error('Seeding failed:', error);
+      console.error('Seed failed:', error);
       process.exit(1);
     });
 }
