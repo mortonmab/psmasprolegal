@@ -179,10 +179,12 @@ export class RecurringComplianceService {
           complianceRunId: runId,
           complianceRunTitle: survey.title,
           complianceRunDescription: survey.description,
-          dueDate: survey.due_date,
+          dueDate: new Date(survey.due_date).toLocaleDateString(),
           recipientEmail: recipient.email,
           recipientName: recipient.full_name,
-          surveyLink: surveyUrl
+          surveyLink: surveyUrl,
+          departmentName: recipient.department_name,
+          createdByName: survey.created_by_name
         });
 
         // Mark email as sent

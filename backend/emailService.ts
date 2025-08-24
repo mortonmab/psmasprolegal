@@ -98,6 +98,11 @@ export interface ComplianceSurveyData {
   complianceRunTitle: string;
   complianceRunDescription: string;
   dueDate: string;
+  recipientName: string;
+  recipientEmail: string;
+  surveyLink: string;
+  departmentName: string;
+  createdByName: string;
 }
 
 export interface ComplianceReminderData {
@@ -111,13 +116,7 @@ export interface ComplianceReminderData {
   confirmationLink: string;
 }
 
-export interface ComplianceSurveyData {
-  recipientName: string;
-  recipientEmail: string;
-  surveyLink: string;
-  departmentName: string;
-  createdByName: string;
-}
+// (Consolidated ComplianceSurveyData is defined above)
 
 export class EmailService {
   /**
